@@ -43,6 +43,7 @@ import {
 } from "../../timelineLayout";
 import TimelineAxis from "../axis/TimelineAxis";
 import ClipMarkerOverlay from "../overlays/ClipMarkerOverlay";
+import ProposedCutOverlay from "../overlays/ProposedCutOverlay";
 import PlaybackCursor from "../playhead/PlaybackCursor";
 
 const HINT_CLIP = "Press C to split clip";
@@ -539,6 +540,7 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 		<>
 			<Row id={CLIP_ROW_ID} isEmpty={clipItems.length === 0} hint={HINT_CLIP}>
 				<ClipMarkerOverlay videoDurationMs={videoDurationMs} />
+				<ProposedCutOverlay />
 				{clipItems.map((item) => (
 					<Item
 						id={item.id}

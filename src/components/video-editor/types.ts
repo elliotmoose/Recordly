@@ -110,6 +110,7 @@ export type EditorEffectSection =
 	| "scene"
 	| "cursor"
 	| "captions"
+	| "autocut"
 	| "caption"
 	| "webcam"
 	| "settings"

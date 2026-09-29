@@ -750,6 +750,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	}) => {
 		return ipcRenderer.invoke("generate-auto-captions", options);
 	},
+	autoCutDetectSilence: (videoPath: string) => {
+		return ipcRenderer.invoke("auto-cut-detect-silence", videoPath);
+	},
+	autoCutGetLlmSettings: () => {
+		return ipcRenderer.invoke("auto-cut-get-llm-settings");
+	},
+	autoCutSetLlmSettings: (update: { baseUrl: string; model: string; apiKey?: string | null }) => {
+		return ipcRenderer.invoke("auto-cut-set-llm-settings", update);
+	},
+	autoCutLlmComplete: (request: {
+		system: string;
+		user: string;
+		json?: boolean;
+		maxTokens?: number;
+	}) => {
+		return ipcRenderer.invoke("auto-cut-llm-complete", request);
+	},
 	setCurrentVideoPath: (
 		path: string,
 		options?: {

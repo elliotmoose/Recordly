@@ -4,6 +4,7 @@ import {
 	Cursor,
 	Gear,
 	PuzzlePiece,
+	Scissors,
 	Sparkle,
 	UserCircle,
 } from "@phosphor-icons/react";
@@ -12,6 +13,8 @@ import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import type { useI18n } from "@/contexts/I18nContext";
+import { AutoCutPanel } from "../autoCut/AutoCutPanel";
+import type { AutoCutController } from "../autoCut/useAutoCutController";
 import ExtensionManager from "../ExtensionManager";
 import { SettingsPanel } from "../SettingsPanel";
 import type { EditorEffectSection } from "../types";
@@ -21,9 +24,16 @@ type Props = {
 	activeSection: EditorEffectSection;
 	setActiveSection: Dispatch<SetStateAction<EditorEffectSection>>;
 	settingsPanelProps: ComponentProps<typeof SettingsPanel>;
+	autoCut: AutoCutController;
 };
 
-export function EditorSidebar({ t, activeSection, setActiveSection, settingsPanelProps }: Props) {
+export function EditorSidebar({
+	t,
+	activeSection,
+	setActiveSection,
+	settingsPanelProps,
+	autoCut,
+}: Props) {
 	const sections = useMemo(
 		() => [
 			{ id: "scene" as const, label: t("settings.sections.scene", "Scene"), icon: Sparkle },
@@ -33,6 +43,11 @@ export function EditorSidebar({ t, activeSection, setActiveSection, settingsPane
 				id: "captions" as const,
 				label: t("settings.sections.captions", "Captions"),
 				icon: ClosedCaptioning,
+			},
+			{
+				id: "autocut" as const,
+				label: t("settings.sections.autoCut", "Auto-cut"),
+				icon: Scissors,
 			},
 			{
 				id: "settings" as const,
@@ -115,6 +130,12 @@ export function EditorSidebar({ t, activeSection, setActiveSection, settingsPane
 			</div>
 			{activeSection === "extensions" ? (
 				<ExtensionManager />
+			) : activeSection === "autocut" ? (
+				<AutoCutPanel
+					t={t}
+					controller={autoCut}
+					onOpenCaptions={() => setActiveSection("captions")}
+				/>
 			) : (
 				<SettingsPanel {...settingsPanelProps} />
 			)}

@@ -18,6 +18,7 @@ import { CropEditorDialog } from "./CropEditorDialog";
 import { EditorDialogs } from "./EditorDialogs";
 import { EditorHeader } from "./EditorHeader";
 import { EditorPreviewPanel } from "./EditorPreviewPanel";
+import type { AutoCutController } from "../autoCut/useAutoCutController";
 import { EditorSidebar } from "./EditorSidebar";
 import { EditorTimelinePanel } from "./EditorTimelinePanel";
 
@@ -35,6 +36,7 @@ type Props = {
 	exportSession: ReturnType<typeof useExportSession>;
 	exportDimensions: ReturnType<typeof useExportDimensions>;
 	settingsPanelProps: ComponentProps<typeof SettingsPanel>;
+	autoCut: AutoCutController;
 	headerLeftControlsPaddingClass: string;
 	hasCaptionsForSidecar: boolean;
 	nvidiaCudaExportAvailable: boolean;
@@ -59,6 +61,7 @@ export function EditorShell(props: Props) {
 		exportSession,
 		exportDimensions,
 		settingsPanelProps,
+		autoCut,
 		headerLeftControlsPaddingClass,
 		hasCaptionsForSidecar,
 		nvidiaCudaExportAvailable,
@@ -186,6 +189,7 @@ export function EditorShell(props: Props) {
 						activeSection={ui.activeEffectSection}
 						setActiveSection={ui.setActiveEffectSection}
 						settingsPanelProps={settingsPanelProps}
+						autoCut={autoCut}
 					/>
 					<EditorPreviewPanel
 						t={t}

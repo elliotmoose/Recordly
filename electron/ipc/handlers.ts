@@ -1,6 +1,7 @@
 import { BrowserWindow } from "electron";
 import { registerAnnouncementHandlers } from "./register/announcements";
 import { registerAssetHandlers } from "./register/assets";
+import { registerAutoCutHandlers } from "./register/autoCut";
 import { registerCaptionHandlers } from "./register/captions";
 import { registerExportHandlers } from "./register/export";
 import { registerPermissionHandlers } from "./register/permissions";
@@ -69,6 +70,7 @@ export function registerIpcHandlers(
 	registerAssetHandlers();
 	registerExportHandlers();
 	registerCaptionHandlers();
+	registerAutoCutHandlers();
 	registerProjectHandlers();
 	registerSettingsHandlers();
 }

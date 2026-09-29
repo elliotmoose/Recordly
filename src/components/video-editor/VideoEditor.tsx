@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useI18n } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { getAspectRatioValue } from "@/utils/aspectRatioUtils";
+import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
+import { ProposedCutsContext } from "./autoCut/ProposedCutsContext";
+import { useAutoCutController } from "./autoCut/useAutoCutController";
 import { loadEditorPreferences } from "./editorPreferences";
 import { useEditorExportController } from "./export/useEditorExportController";
 import { useExportDimensions } from "./export/useExportDimensions";
@@ -286,6 +289,7 @@ export default function VideoEditor() {
 	});
 	const {
 		cursor: { effectiveCursorTelemetry },
+		playback,
 		projection,
 		audio,
 		captionCommands,
@@ -361,28 +365,50 @@ export default function VideoEditor() {
 		handleUploadWebcam,
 		handleClearWebcam,
 	});
+	const autoCut = useAutoCutController({
+		t,
+		timeline,
+		sourcePath: resolveAutoCaptionSourcePath({ videoSourcePath, videoPath }),
+		currentTime,
+		videoPlaybackRef,
+		startPlayback: playback.startPlayback,
+		nextClipIdRef,
+	});
+	const proposedCuts = useMemo(
+		() =>
+			activeEffectSection === "autocut"
+				? autoCut.removalRanges.map((range) => ({
+						startMs: projection.mapSourceTimeToTimelineTime(range.startMs),
+						endMs: projection.mapSourceTimeToTimelineTime(range.endMs),
+					}))
+				: [],
+		[activeEffectSection, autoCut.removalRanges, projection],
+	);
 	return (
-		<EditorShell
-			t={t}
-			project={project}
-			appearance={appearance}
-			timeline={timeline}
-			ui={ui}
-			presets={presets}
-			projectController={projectController}
-			editing={editing}
-			exportController={exportController}
-			exportSettings={exportSettings}
-			exportSession={exportSession}
-			exportDimensions={exportDimensions}
-			settingsPanelProps={settingsPanelProps}
-			headerLeftControlsPaddingClass={headerLeftControlsPaddingClass}
-			hasCaptionsForSidecar={hasCaptionsForSidecar}
-			nvidiaCudaExportAvailable={nvidiaCudaExportAvailable}
-			experimentalNvidiaCudaExport={experimentalNvidiaCudaExport}
-			setExperimentalNvidiaCudaExport={setExperimentalNvidiaCudaExport}
-			effectiveShowCursor={effectiveShowCursor}
-			previewAspectRatioValue={previewAspectRatioValue}
-		/>
+		<ProposedCutsContext.Provider value={proposedCuts}>
+			<EditorShell
+				t={t}
+				project={project}
+				appearance={appearance}
+				timeline={timeline}
+				ui={ui}
+				presets={presets}
+				projectController={projectController}
+				editing={editing}
+				exportController={exportController}
+				exportSettings={exportSettings}
+				exportSession={exportSession}
+				exportDimensions={exportDimensions}
+				settingsPanelProps={settingsPanelProps}
+				autoCut={autoCut}
+				headerLeftControlsPaddingClass={headerLeftControlsPaddingClass}
+				hasCaptionsForSidecar={hasCaptionsForSidecar}
+				nvidiaCudaExportAvailable={nvidiaCudaExportAvailable}
+				experimentalNvidiaCudaExport={experimentalNvidiaCudaExport}
+				setExperimentalNvidiaCudaExport={setExperimentalNvidiaCudaExport}
+				effectiveShowCursor={effectiveShowCursor}
+				previewAspectRatioValue={previewAspectRatioValue}
+			/>
+		</ProposedCutsContext.Provider>
 	);
 }

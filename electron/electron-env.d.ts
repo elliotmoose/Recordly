@@ -725,6 +725,35 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		autoCutDetectSilence: (videoPath: string) => Promise<
+			| {
+					success: true;
+					intervals: Array<{ startMs: number; endMs: number }>;
+					audioSourceLabel: string;
+			  }
+			| { success: false; error: string }
+		>;
+		autoCutGetLlmSettings: () => Promise<AutoCutLlmSettings>;
+		autoCutSetLlmSettings: (update: {
+			baseUrl: string;
+			model: string;
+			apiKey?: string | null;
+		}) => Promise<AutoCutLlmSettings>;
+		autoCutLlmComplete: (request: {
+			system: string;
+			user: string;
+			json?: boolean;
+			maxTokens?: number;
+		}) => Promise<
+			| {
+					success: true;
+					text: string;
+					model: string;
+					usage: { promptTokens: number; completionTokens: number } | null;
+					elapsedMs: number;
+			  }
+			| { success: false; error: string }
+		>;
 		setCurrentVideoPath: (
 			path: string,
 			options?: {
@@ -975,6 +1004,13 @@ interface SystemCursorAsset {
 	hotspotY: number;
 	width: number;
 	height: number;
+}
+
+interface AutoCutLlmSettings {
+	baseUrl: string;
+	model: string;
+	hasApiKey: boolean;
+	keyEncrypted: boolean;
 }
 
 interface AutoCaptionCue {
