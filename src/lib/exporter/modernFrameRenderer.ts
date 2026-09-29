@@ -3,13 +3,12 @@ import { MotionBlurFilter } from "pixi-filters/motion-blur";
 import { ZoomBlurFilter } from "pixi-filters/zoom-blur";
 import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
 import {
-	CAPTION_FONT_WEIGHT,
 	CAPTION_LINE_HEIGHT,
+	getCaptionCanvasFont,
 	getCaptionPadding,
 	getCaptionScaledFontSize,
 	getCaptionScaledRadius,
 	getCaptionTextMaxWidth,
-	getCaptionWordVisualState,
 } from "@/components/video-editor/captionStyle";
 import type {
 	AnnotationRegion,
@@ -86,6 +85,7 @@ import {
 	renderAnnotations,
 	renderAnnotationToCanvas,
 } from "./annotationRenderer";
+import { drawCaptionLine, ensureCaptionFontLoaded } from "./captionRenderer";
 import { ForwardFrameSource } from "./forwardFrameSource";
 import { resolveMediaElementSource } from "./localMediaSource";
 import {
@@ -606,6 +606,7 @@ export class FrameRenderer {
 		this.annotationAssets = await preloadAnnotationAssets(this.config.annotationRegions ?? []);
 		await this.setupAnnotationLayer();
 		this.setupCaptionResources();
+		await ensureCaptionFontLoaded(this.config.autoCaptionSettings);
 
 		if (this.shouldUseZoomMotionBlur()) {
 			this.zoomBlurFilter = new ZoomBlurFilter({
@@ -1649,7 +1650,7 @@ export class FrameRenderer {
 			this.config.width,
 			settings.maxWidth,
 		);
-		measureCtx.font = `${CAPTION_FONT_WEIGHT} ${fontSize}px ${fontFamily}`;
+		measureCtx.font = getCaptionCanvasFont(settings, fontSize);
 
 		const layout = buildActiveCaptionLayout({
 			cues,
@@ -1742,7 +1743,7 @@ export class FrameRenderer {
 		}
 
 		ctx.clearRect(0, 0, this.captionCanvas.width, this.captionCanvas.height);
-		ctx.font = `${CAPTION_FONT_WEIGHT} ${state.fontSize}px ${state.fontFamily}`;
+		ctx.font = getCaptionCanvasFont(settings, state.fontSize);
 		ctx.fillStyle = `rgba(0, 0, 0, ${settings.backgroundOpacity})`;
 		drawSquircleOnCanvas(ctx, {
 			x: 0,
@@ -1758,27 +1759,13 @@ export class FrameRenderer {
 		ctx.textBaseline = "middle";
 
 		state.layout.visibleLines.forEach((line, lineIndex) => {
-			let cursorX = (state.boxWidth - line.width) / 2;
-			const lineY = padding.y + state.lineHeight * lineIndex + state.lineHeight / 2;
-
-			line.words.forEach((word) => {
-				const segmentText = `${word.leadingSpace ? " " : ""}${word.text}`;
-				const segmentWidth = ctx.measureText(segmentText).width;
-				const visualState = getCaptionWordVisualState(
-					state.layout.hasWordTimings,
-					word.state,
-				);
-
-				ctx.save();
-				ctx.translate(cursorX, lineY);
-				ctx.fillStyle = visualState.isInactive
-					? settings.inactiveTextColor
-					: settings.textColor;
-				ctx.globalAlpha = visualState.opacity;
-				ctx.fillText(segmentText, 0, 0);
-				ctx.restore();
-
-				cursorX += segmentWidth;
+			drawCaptionLine(ctx, {
+				line,
+				startX: (state.boxWidth - line.width) / 2,
+				centerY: padding.y + state.lineHeight * lineIndex + state.lineHeight / 2,
+				fontSize: state.fontSize,
+				settings,
+				hasWordTimings: state.layout.hasWordTimings,
 			});
 		});
 

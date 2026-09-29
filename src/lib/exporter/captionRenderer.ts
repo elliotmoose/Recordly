@@ -1,19 +1,41 @@
-import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
 import {
-	CAPTION_FONT_WEIGHT,
+	buildActiveCaptionLayout,
+	type CaptionLineLayout,
+} from "@/components/video-editor/captionLayout";
+import {
 	CAPTION_LINE_HEIGHT,
+	getCaptionCanvasFont,
+	getCaptionHighlightBoxMetrics,
 	getCaptionPadding,
 	getCaptionScaledFontSize,
 	getCaptionScaledRadius,
 	getCaptionTextMaxWidth,
-	getCaptionWordVisualState,
+	getCaptionWordAppearance,
 } from "@/components/video-editor/captionStyle";
-import {
-	type AutoCaptionSettings,
-	type CaptionCue,
-	getDefaultCaptionFontFamily,
-} from "@/components/video-editor/types";
+import type { AutoCaptionSettings, CaptionCue } from "@/components/video-editor/types";
 import { drawSquircleOnCanvas } from "@/lib/geometry/squircle";
+
+/**
+ * Wait (bounded) for the caption font to be available, so an export started
+ * right after picking a web font doesn't rasterize with the fallback face.
+ */
+export async function ensureCaptionFontLoaded(
+	settings: AutoCaptionSettings | null | undefined,
+	timeoutMs = 3000,
+) {
+	if (!settings?.enabled || typeof document === "undefined" || !document.fonts?.load) {
+		return;
+	}
+
+	try {
+		await Promise.race([
+			document.fonts.load(getCaptionCanvasFont(settings, 32)),
+			new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+		]);
+	} catch {
+		// An unknown family just falls back like the preview does.
+	}
+}
 
 /** Draw the active caption using the same typography and timing as preview. */
 export function renderCaptions(
@@ -31,7 +53,7 @@ export function renderCaptions(
 	ctx.save();
 
 	const fontSize = getCaptionScaledFontSize(settings.fontSize, width, settings.maxWidth);
-	ctx.font = `${CAPTION_FONT_WEIGHT} ${fontSize}px ${settings.fontFamily || getDefaultCaptionFontFamily()}`;
+	ctx.font = getCaptionCanvasFont(settings, fontSize);
 	const padding = getCaptionPadding(fontSize);
 
 	const activeCaptionLayout = buildActiveCaptionLayout({
@@ -76,33 +98,78 @@ export function renderCaptions(
 	});
 	ctx.fill();
 
-	ctx.textAlign = "left";
-	ctx.textBaseline = "middle";
-
 	activeCaptionLayout.visibleLines.forEach((line, lineIndex) => {
-		let cursorX = -line.width / 2;
-		const lineY = -boxHeight / 2 + paddingY + lineHeight * lineIndex + lineHeight / 2;
-
-		line.words.forEach((word) => {
-			const segmentText = `${word.leadingSpace ? " " : ""}${word.text}`;
-			const segmentWidth = ctx.measureText(segmentText).width;
-			const visualState = getCaptionWordVisualState(
-				activeCaptionLayout.hasWordTimings,
-				word.state,
-			);
-
-			ctx.save();
-			ctx.translate(cursorX, lineY);
-			ctx.fillStyle = visualState.isInactive
-				? settings.inactiveTextColor
-				: settings.textColor;
-			ctx.globalAlpha = activeCaptionLayout.opacity * visualState.opacity;
-			ctx.fillText(segmentText, 0, 0);
-			ctx.restore();
-
-			cursorX += segmentWidth;
+		drawCaptionLine(ctx, {
+			line,
+			startX: -line.width / 2,
+			centerY: -boxHeight / 2 + paddingY + lineHeight * lineIndex + lineHeight / 2,
+			fontSize,
+			settings,
+			hasWordTimings: activeCaptionLayout.hasWordTimings,
 		});
 	});
 
 	ctx.restore();
+}
+
+/**
+ * Draw one laid-out caption line with per-word highlighting. Pills are drawn in
+ * a first pass so a padded pill never paints over the neighbouring word's text.
+ * Uses the context's current font and globalAlpha.
+ */
+export function drawCaptionLine(
+	ctx: CanvasRenderingContext2D,
+	options: {
+		line: CaptionLineLayout;
+		startX: number;
+		centerY: number;
+		fontSize: number;
+		settings: AutoCaptionSettings;
+		hasWordTimings: boolean;
+	},
+) {
+	ctx.textAlign = "left";
+	ctx.textBaseline = "middle";
+
+	let cursorX = options.startX;
+	const segments = options.line.words.map((word) => {
+		const segmentText = `${word.leadingSpace ? " " : ""}${word.text}`;
+		const segmentWidth = ctx.measureText(segmentText).width;
+		const wordWidth = ctx.measureText(word.text).width;
+		const segment = {
+			segmentText,
+			x: cursorX,
+			wordX: cursorX + segmentWidth - wordWidth,
+			wordWidth,
+			appearance: getCaptionWordAppearance(
+				options.settings,
+				options.hasWordTimings,
+				word.state,
+			),
+		};
+		cursorX += segmentWidth;
+		return segment;
+	});
+
+	const box = getCaptionHighlightBoxMetrics(options.fontSize);
+	for (const segment of segments) {
+		if (!segment.appearance.boxColor) {
+			continue;
+		}
+		ctx.fillStyle = segment.appearance.boxColor;
+		ctx.beginPath();
+		ctx.roundRect(
+			segment.wordX - box.padX,
+			options.centerY - box.height / 2,
+			segment.wordWidth + box.padX * 2,
+			box.height,
+			box.radius,
+		);
+		ctx.fill();
+	}
+
+	for (const segment of segments) {
+		ctx.fillStyle = segment.appearance.color;
+		ctx.fillText(segment.segmentText, segment.x, options.centerY);
+	}
 }

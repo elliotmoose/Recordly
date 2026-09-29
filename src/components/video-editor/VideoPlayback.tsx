@@ -34,13 +34,15 @@ import { AnnotationOverlay } from "./AnnotationOverlay";
 import { type CaptionEditTarget, normalizeCaptionEditText } from "./captionEditing";
 import { buildActiveCaptionLayout } from "./captionLayout";
 import {
-	CAPTION_FONT_WEIGHT,
 	CAPTION_LINE_HEIGHT,
+	getCaptionCanvasFont,
+	getCaptionFontWeight,
+	getCaptionHighlightBoxMetrics,
 	getCaptionPadding,
 	getCaptionScaledFontSize,
 	getCaptionScaledRadius,
 	getCaptionTextMaxWidth,
-	getCaptionWordVisualState,
+	getCaptionWordAppearance,
 } from "./captionStyle";
 import {
 	type AnnotationRegion,
@@ -643,7 +645,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				return null;
 			}
 
-			measurementContext.font = `${CAPTION_FONT_WEIGHT} ${fontSize}px ${autoCaptionSettings.fontFamily || getDefaultCaptionFontFamily()}`;
+			measurementContext.font = getCaptionCanvasFont(autoCaptionSettings, fontSize);
 
 			return buildActiveCaptionLayout({
 				cues: autoCaptions,
@@ -678,7 +680,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				return null;
 			}
 
-			measurementContext.font = `${CAPTION_FONT_WEIGHT} ${fontSize}px ${autoCaptionSettings.fontFamily || getDefaultCaptionFontFamily()}`;
+			measurementContext.font = getCaptionCanvasFont(autoCaptionSettings, fontSize);
 			const measuredWidth = Math.max(
 				...captionEditSession.draft
 					.split(/\r?\n/)
@@ -2657,7 +2659,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 											)}px`,
 											lineHeight: CAPTION_LINE_HEIGHT,
 											textAlign: "center",
-											fontWeight: CAPTION_FONT_WEIGHT,
+											fontWeight: getCaptionFontWeight(autoCaptionSettings),
 											padding: `${
 												getCaptionPadding(
 													getCaptionScaledFontSize(
@@ -2791,11 +2793,21 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 													}}
 												>
 													{line.words.map((word) => {
-														const visualState =
-															getCaptionWordVisualState(
-																activeCaptionLayout.hasWordTimings,
-																word.state,
-															);
+														const appearance = getCaptionWordAppearance(
+															autoCaptionSettings,
+															activeCaptionLayout.hasWordTimings,
+															word.state,
+														);
+														const highlightBox = appearance.boxColor
+															? getCaptionHighlightBoxMetrics(
+																	getCaptionScaledFontSize(
+																		autoCaptionSettings.fontSize,
+																		overlayRef.current
+																			?.clientWidth || 960,
+																		autoCaptionSettings.maxWidth,
+																	),
+																)
+															: null;
 
 														return (
 															<span
@@ -2803,13 +2815,48 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 																style={{
 																	display: "inline-block",
 																	whiteSpace: "pre",
-																	color: visualState.isInactive
-																		? autoCaptionSettings.inactiveTextColor
-																		: autoCaptionSettings.textColor,
-																	opacity: visualState.opacity,
+																	color: appearance.color,
 																}}
 															>
-																{`${word.leadingSpace ? " " : ""}${word.text}`}
+																{word.leadingSpace ? " " : ""}
+																<span
+																	style={
+																		highlightBox &&
+																		appearance.boxColor
+																			? {
+																					position:
+																						"relative",
+																					zIndex: 0,
+																				}
+																			: undefined
+																	}
+																>
+																	{highlightBox &&
+																	appearance.boxColor ? (
+																		<span
+																			aria-hidden
+																			style={{
+																				position:
+																					"absolute",
+																				zIndex: -1,
+																				left:
+																					-highlightBox.padX,
+																				right:
+																					-highlightBox.padX,
+																				top: "50%",
+																				height: highlightBox.height,
+																				marginTop:
+																					-highlightBox.height /
+																					2,
+																				borderRadius:
+																					highlightBox.radius,
+																				backgroundColor:
+																					appearance.boxColor,
+																			}}
+																		/>
+																	) : null}
+																	{word.text}
+																</span>
 															</span>
 														);
 													})}

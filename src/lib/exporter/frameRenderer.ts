@@ -72,7 +72,7 @@ import {
 } from "@/lib/pixiApplicationLifecycle";
 import { isVideoWallpaperSource } from "@/lib/wallpapers";
 import { renderAnnotations } from "./annotationRenderer";
-import { renderCaptions } from "./captionRenderer";
+import { ensureCaptionFontLoaded, renderCaptions } from "./captionRenderer";
 import { ForwardFrameSource } from "./forwardFrameSource";
 import { resolveMediaElementSource } from "./localMediaSource";
 import { buildTemporalSamplePlanUs, getTemporalMotionBlurConfig } from "./temporalMotionBlur";
@@ -365,6 +365,7 @@ export class FrameRenderer {
 	}
 
 	async initialize(): Promise<void> {
+		await ensureCaptionFontLoaded(this.config.autoCaptionSettings);
 		let cursorOverlayEnabled = true;
 		try {
 			await preloadCursorAssets();

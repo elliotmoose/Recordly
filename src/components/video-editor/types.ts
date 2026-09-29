@@ -560,12 +560,19 @@ export interface CaptionCueWord {
 
 export type AutoCaptionAnimation = "none" | "fade" | "rise" | "pop";
 
+/** How the word currently being spoken is emphasised. */
+export type CaptionHighlightMode = "off" | "color" | "box";
+
+export const CAPTION_FONT_WEIGHTS = [400, 500, 600, 700, 800] as const;
+export type CaptionFontWeight = (typeof CAPTION_FONT_WEIGHTS)[number];
+
 export interface AutoCaptionSettings {
 	enabled: boolean;
 	/** Show the hover ghost on the timeline caption track for click-to-add. */
 	timelineQuickAdd: boolean;
 	language: string;
 	fontFamily: string;
+	fontWeight: CaptionFontWeight;
 	fontSize: number;
 	bottomOffset: number;
 	maxWidth: number;
@@ -575,6 +582,8 @@ export interface AutoCaptionSettings {
 	textColor: string;
 	inactiveTextColor: string;
 	backgroundOpacity: number;
+	highlightMode: CaptionHighlightMode;
+	highlightColor: string;
 }
 
 export const DEFAULT_AUTO_CAPTION_SETTINGS: AutoCaptionSettings = {
@@ -582,6 +591,7 @@ export const DEFAULT_AUTO_CAPTION_SETTINGS: AutoCaptionSettings = {
 	timelineQuickAdd: true,
 	language: "auto",
 	fontFamily: getDefaultCaptionFontFamily(),
+	fontWeight: 400,
 	fontSize: 30,
 	bottomOffset: 3,
 	maxWidth: 62,
@@ -591,6 +601,8 @@ export const DEFAULT_AUTO_CAPTION_SETTINGS: AutoCaptionSettings = {
 	textColor: "#FFFFFF",
 	inactiveTextColor: "#A3A3A3",
 	backgroundOpacity: 0.9,
+	highlightMode: "off",
+	highlightColor: "#FACC15",
 };
 
 export type PlaybackSpeed = 0.25 | 0.5 | 0.75 | 1.25 | 1.5 | 1.75 | 2;

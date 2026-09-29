@@ -27,6 +27,8 @@ import {
 	type AudioRegion,
 	type AutoCaptionAnimation,
 	type AutoCaptionSettings,
+	CAPTION_FONT_WEIGHTS,
+	type CaptionFontWeight,
 	type CaptionCue,
 	type CaptionCueWord,
 	type ClipRegion,
@@ -782,7 +784,16 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			rawAutoCaptionSettings.language.trim()
 				? rawAutoCaptionSettings.language.trim()
 				: DEFAULT_AUTO_CAPTION_SETTINGS.language,
-		fontFamily: getDefaultCaptionFontFamily(),
+		fontFamily:
+			typeof rawAutoCaptionSettings.fontFamily === "string" &&
+			rawAutoCaptionSettings.fontFamily.trim()
+				? rawAutoCaptionSettings.fontFamily.trim()
+				: getDefaultCaptionFontFamily(),
+		fontWeight: CAPTION_FONT_WEIGHTS.includes(
+			rawAutoCaptionSettings.fontWeight as CaptionFontWeight,
+		)
+			? (rawAutoCaptionSettings.fontWeight as CaptionFontWeight)
+			: DEFAULT_AUTO_CAPTION_SETTINGS.fontWeight,
 		fontSize: isFiniteNumber(rawAutoCaptionSettings.fontSize)
 			? clamp(rawAutoCaptionSettings.fontSize, 16, 72)
 			: DEFAULT_AUTO_CAPTION_SETTINGS.fontSize,
@@ -815,6 +826,17 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		backgroundOpacity: isFiniteNumber(rawAutoCaptionSettings.backgroundOpacity)
 			? clamp(rawAutoCaptionSettings.backgroundOpacity, 0, 1)
 			: DEFAULT_AUTO_CAPTION_SETTINGS.backgroundOpacity,
+		highlightMode:
+			rawAutoCaptionSettings.highlightMode === "off" ||
+			rawAutoCaptionSettings.highlightMode === "color" ||
+			rawAutoCaptionSettings.highlightMode === "box"
+				? rawAutoCaptionSettings.highlightMode
+				: DEFAULT_AUTO_CAPTION_SETTINGS.highlightMode,
+		highlightColor:
+			typeof rawAutoCaptionSettings.highlightColor === "string" &&
+			rawAutoCaptionSettings.highlightColor.trim()
+				? rawAutoCaptionSettings.highlightColor
+				: DEFAULT_AUTO_CAPTION_SETTINGS.highlightColor,
 	};
 
 	const rawCropX = isFiniteNumber(editor.cropRegion?.x)

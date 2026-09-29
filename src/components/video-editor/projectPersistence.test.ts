@@ -6,7 +6,12 @@ import {
 	normalizeProjectEditor,
 	resolveVideoUrl,
 } from "./projectPersistence";
-import { ADVANCED_VERTICAL_PADDING_MAX } from "./types";
+import {
+	ADVANCED_VERTICAL_PADDING_MAX,
+	type AutoCaptionSettings,
+	DEFAULT_AUTO_CAPTION_SETTINGS,
+	getDefaultCaptionFontFamily,
+} from "./types";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -112,5 +117,41 @@ describe("normalizeProjectEditor", () => {
 		expect(editor.webcam.width).toBe(80);
 		expect(editor.webcam.height).toBe(80);
 		expect(editor.webcam.roundness).toBeCloseTo(4.34, 1);
+	});
+});
+
+describe("normalizeProjectEditor caption typography", () => {
+	it("keeps a chosen caption font, weight and highlight", () => {
+		const editor = normalizeProjectEditor({
+			autoCaptionSettings: {
+				...DEFAULT_AUTO_CAPTION_SETTINGS,
+				fontFamily: "Georgia, serif",
+				fontWeight: 700,
+				highlightMode: "box",
+				highlightColor: "#22C55E",
+			},
+		});
+
+		expect(editor.autoCaptionSettings.fontFamily).toBe("Georgia, serif");
+		expect(editor.autoCaptionSettings.fontWeight).toBe(700);
+		expect(editor.autoCaptionSettings.highlightMode).toBe("box");
+		expect(editor.autoCaptionSettings.highlightColor).toBe("#22C55E");
+	});
+
+	it("defaults projects saved before these settings existed", () => {
+		const editor = normalizeProjectEditor({
+			autoCaptionSettings: {
+				enabled: true,
+				fontWeight: 123,
+				highlightMode: "sparkle",
+			} as unknown as AutoCaptionSettings,
+		});
+
+		expect(editor.autoCaptionSettings.fontFamily).toBe(getDefaultCaptionFontFamily());
+		expect(editor.autoCaptionSettings.fontWeight).toBe(400);
+		expect(editor.autoCaptionSettings.highlightMode).toBe("off");
+		expect(editor.autoCaptionSettings.highlightColor).toBe(
+			DEFAULT_AUTO_CAPTION_SETTINGS.highlightColor,
+		);
 	});
 });

@@ -22,6 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getAssetPath, getRenderableVideoUrl, getWallpaperThumbnailUrl } from "@/lib/assetPath";
+import { getCustomFonts } from "@/lib/customFonts";
 import { cn } from "@/lib/utils";
 import type { BuiltInWallpaper } from "@/lib/wallpapers";
 import {
@@ -33,7 +34,7 @@ import { type AspectRatio } from "@/utils/aspectRatioUtils";
 import { useI18n, useScopedT } from "../../contexts/I18nContext";
 import type { AppLocale } from "../../i18n/config";
 import { SUPPORTED_LOCALES } from "../../i18n/config";
-import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
+import { AnnotationSettingsPanel, FONT_FAMILY_VALUES } from "./AnnotationSettingsPanel";
 import CaptionListPanel from "./CaptionListPanel";
 import type { CaptionRetimeSpan } from "./captionOps";
 import {
@@ -51,6 +52,8 @@ import type {
 	AutoCaptionAnimation,
 	AutoCaptionSettings,
 	CaptionCue,
+	CaptionFontWeight,
+	CaptionHighlightMode,
 	CropRegion,
 	CursorClickEffectStyle,
 	CursorStyle,
@@ -65,7 +68,9 @@ import type {
 } from "./types";
 import {
 	ADVANCED_VERTICAL_PADDING_MAX,
+	CAPTION_FONT_WEIGHTS,
 	DEFAULT_AUTO_CAPTION_SETTINGS,
+	getDefaultCaptionFontFamily,
 	DEFAULT_CROP_REGION,
 	DEFAULT_CURSOR_CLICK_BOUNCE,
 	DEFAULT_CURSOR_CLICK_BOUNCE_DURATION,
@@ -140,6 +145,27 @@ const CAPTION_ANIMATION_OPTIONS: Array<{ value: AutoCaptionAnimation; label: str
 	{ value: "rise", label: "Rise" },
 	{ value: "pop", label: "Pop" },
 ];
+
+const CAPTION_HIGHLIGHT_OPTIONS: Array<{
+	value: CaptionHighlightMode;
+	labelKey: string;
+	fallback: string;
+}> = [
+	{ value: "off", labelKey: "captions.highlightOff", fallback: "Off" },
+	{ value: "color", labelKey: "captions.highlightText", fallback: "Color word" },
+	{ value: "box", labelKey: "captions.highlightBox", fallback: "Box word" },
+];
+
+const CAPTION_FONT_WEIGHT_LABELS: Record<
+	CaptionFontWeight,
+	{ labelKey: string; fallback: string }
+> = {
+	400: { labelKey: "captions.weightRegular", fallback: "Regular" },
+	500: { labelKey: "captions.weightMedium", fallback: "Medium" },
+	600: { labelKey: "captions.weightSemibold", fallback: "Semibold" },
+	700: { labelKey: "captions.weightBold", fallback: "Bold" },
+	800: { labelKey: "captions.weightExtraBold", fallback: "Extra Bold" },
+};
 
 const CLICK_EFFECT_COLOR_OPTIONS = [
 	"#2563EB",
@@ -1099,6 +1125,22 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
 	const tSettings = useScopedT("settings");
 	const { locale, setLocale, t } = useI18n();
+	const captionFontOptions = useMemo(() => {
+		const defaultFamily = getDefaultCaptionFontFamily();
+		const options = [
+			{ value: defaultFamily, label: tSettings("captions.defaultFont", "Default") },
+			...FONT_FAMILY_VALUES.map((font) => ({
+				value: font.value,
+				label: t(`editor.${font.labelKey}`),
+			})),
+			...getCustomFonts().map((font) => ({ value: font.fontFamily, label: font.name })),
+		];
+		const current = autoCaptionSettings?.fontFamily;
+		if (current && !options.some((option) => option.value === current)) {
+			options.push({ value: current, label: current.split(",")[0].replace(/["']/g, "") });
+		}
+		return options;
+	}, [autoCaptionSettings?.fontFamily, t, tSettings]);
 	const { preference: themePreference, setPreference: setThemePreference } = useTheme();
 	const isBackgroundPanel = panelMode === "background";
 	const initialEditorPreferences = useMemo(() => loadEditorPreferences(), []);
@@ -2448,6 +2490,45 @@ export function SettingsPanel({
 						className="data-[state=checked]:bg-[#2563EB] scale-75"
 					/>
 				</div>
+				<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+					<div className="text-[10px] text-muted-foreground">
+						{tSettings("captions.highlight", "Highlight spoken word")}
+					</div>
+					<Select
+						value={autoCaptionSettings.highlightMode}
+						onValueChange={(value) =>
+							updateAutoCaptionSettings({
+								highlightMode: value as CaptionHighlightMode,
+							})
+						}
+					>
+						<SelectTrigger className="h-9 w-[160px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent className="border-foreground/10 bg-editor-surface-alt text-foreground">
+							{CAPTION_HIGHLIGHT_OPTIONS.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									{tSettings(option.labelKey, option.fallback)}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				{autoCaptionSettings.highlightMode !== "off" ? (
+					<label className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+						<span className="text-[10px] text-muted-foreground">
+							{tSettings("captions.highlightColor", "Highlight color")}
+						</span>
+						<input
+							type="color"
+							value={autoCaptionSettings.highlightColor}
+							onChange={(event) =>
+								updateAutoCaptionSettings({ highlightColor: event.target.value })
+							}
+							className="h-7 w-10 rounded border border-foreground/10 bg-transparent"
+						/>
+					</label>
+				) : null}
 				<label className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-2">
 					<span className="text-[10px] text-muted-foreground">
 						{tSettings("captions.textColor", "Text color")}
@@ -2463,6 +2544,61 @@ export function SettingsPanel({
 				</label>
 				<div className="mb-1 text-sm font-medium text-foreground">
 					{tSettings("captions.fontSettings", "Font Settings")}
+				</div>
+				<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+					<div className="text-[10px] text-muted-foreground">
+						{tSettings("captions.fontFamily", "Font")}
+					</div>
+					<Select
+						value={autoCaptionSettings.fontFamily}
+						onValueChange={(fontFamily) => updateAutoCaptionSettings({ fontFamily })}
+					>
+						<SelectTrigger className="h-9 w-[160px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent className="max-h-[300px] border-foreground/10 bg-editor-surface-alt text-foreground">
+							{captionFontOptions.map((option) => (
+								<SelectItem
+									key={option.value}
+									value={option.value}
+									style={{ fontFamily: option.value }}
+								>
+									{option.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+					<div className="text-[10px] text-muted-foreground">
+						{tSettings("captions.fontWeight", "Weight")}
+					</div>
+					<Select
+						value={String(autoCaptionSettings.fontWeight)}
+						onValueChange={(value) =>
+							updateAutoCaptionSettings({
+								fontWeight: Number(value) as CaptionFontWeight,
+							})
+						}
+					>
+						<SelectTrigger className="h-9 w-[160px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent className="border-foreground/10 bg-editor-surface-alt text-foreground">
+							{CAPTION_FONT_WEIGHTS.map((weight) => (
+								<SelectItem
+									key={weight}
+									value={String(weight)}
+									style={{ fontWeight: weight }}
+								>
+									{tSettings(
+										CAPTION_FONT_WEIGHT_LABELS[weight].labelKey,
+										CAPTION_FONT_WEIGHT_LABELS[weight].fallback,
+									)}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</div>
 				<SliderControl
 					label={tSettings("captions.fontSize", "Font size")}
