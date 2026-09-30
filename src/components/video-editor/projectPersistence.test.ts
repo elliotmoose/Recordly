@@ -155,3 +155,16 @@ describe("normalizeProjectEditor caption typography", () => {
 		);
 	});
 });
+
+describe("normalizeProjectEditor clip source positions", () => {
+	it("keeps sourceStartMs on moved clips and omits it on legacy ones", () => {
+		const editor = normalizeProjectEditor({
+			clipRegions: [
+				{ id: "a", startMs: 0, endMs: 1000, speed: 1, sourceStartMs: 3000 },
+				{ id: "b", startMs: 1000, endMs: 2000, speed: 1 },
+			],
+		});
+		expect(editor.clipRegions[0].sourceStartMs).toBe(3000);
+		expect("sourceStartMs" in editor.clipRegions[1]).toBe(false);
+	});
+});

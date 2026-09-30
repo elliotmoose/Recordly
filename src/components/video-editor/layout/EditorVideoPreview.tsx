@@ -1,9 +1,20 @@
-import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
+import {
+	type ComponentProps,
+	type Dispatch,
+	type RefObject,
+	type SetStateAction,
+	useMemo,
+} from "react";
 import type { AspectRatio } from "@/utils/aspectRatioUtils";
 import type { useVideoEditorAudio } from "../audio/useVideoEditorAudio";
 import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useTimelineState } from "../state/useTimelineState";
-import type { CursorTelemetryPoint, SpeedRegion, ZoomRegion } from "../types";
+import {
+	type CursorTelemetryPoint,
+	mapTimelineRegionsToSource,
+	type SpeedRegion,
+	type ZoomRegion,
+} from "../types";
 import VideoPlayback, { type VideoPlaybackRef } from "../VideoPlayback";
 
 type PlaybackProps = ComponentProps<typeof VideoPlayback>;
@@ -64,6 +75,39 @@ export function EditorVideoPreview({
 	setError,
 	handlers,
 }: Props) {
+	// The preview runs on the source clock; annotations are placed in timeline time.
+	const sourceAnnotationRegions = useMemo(
+		() => mapTimelineRegionsToSource(timeline.annotationRegions, timeline.clipRegions),
+		[timeline.annotationRegions, timeline.clipRegions],
+	);
+	// Pieces of an annotation split across reordered clips carry "#n" ids; edits
+	// go to the annotation itself.
+	const annotationHandlers = useMemo(() => {
+		const baseId = (id: string) => id.replace(/#\d+$/, "");
+		const { onSelectAnnotation, onAnnotationPositionChange, onAnnotationSizeChange } = handlers;
+		return {
+			onSelectAnnotation: onSelectAnnotation
+				? (id: string | null) => onSelectAnnotation(id === null ? null : baseId(id))
+				: undefined,
+			onAnnotationPositionChange: onAnnotationPositionChange
+				? (id: string, ...rest: unknown[]) =>
+						(onAnnotationPositionChange as (id: string, ...args: unknown[]) => void)(
+							baseId(id),
+							...rest,
+						)
+				: undefined,
+			onAnnotationSizeChange: onAnnotationSizeChange
+				? (id: string, ...rest: unknown[]) =>
+						(onAnnotationSizeChange as (id: string, ...args: unknown[]) => void)(
+							baseId(id),
+							...rest,
+						)
+				: undefined,
+		} as Pick<
+			Handlers,
+			"onSelectAnnotation" | "onAnnotationPositionChange" | "onAnnotationSizeChange"
+		>;
+	}, [handlers]);
 	return (
 		<VideoPlayback
 			key={`${videoPath || "no-video"}:${previewVersion}:inline`}
@@ -101,7 +145,7 @@ export function EditorVideoPreview({
 			}
 			trimRegions={timeline.trimRegions}
 			speedRegions={effectiveSpeedRegions}
-			annotationRegions={timeline.annotationRegions}
+			annotationRegions={sourceAnnotationRegions}
 			autoCaptions={timeline.autoCaptions}
 			autoCaptionSettings={timeline.autoCaptionSettings}
 			selectedAnnotationId={timeline.selectedAnnotationId}
@@ -136,6 +180,7 @@ export function EditorVideoPreview({
 			}
 			suspendRendering={suspendRendering}
 			{...handlers}
+			{...annotationHandlers}
 		/>
 	);
 }

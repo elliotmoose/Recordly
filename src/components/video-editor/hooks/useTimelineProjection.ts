@@ -3,12 +3,15 @@ import { type MutableRefObject, useCallback, useEffect, useMemo } from "react";
 import { deriveNextId } from "../projectPersistence";
 import type { useTimelineState } from "../state/useTimelineState";
 import {
+	type AnnotationRegion,
 	type CaptionCue,
 	clipsToTrims,
 	extendAutoFullTrackClip,
 	getClipSourceEndMs,
+	getClipSourceStartMs,
 	getTimelineDurationMs,
 	mapSourceTimeToTimelineTime,
+	mapTimelineRegionsToSource,
 	mapTimelineTimeToSourceTime,
 	type SpeedRegion,
 	trimsToClips,
@@ -89,13 +92,12 @@ export function useTimelineProjection({
 		[clipRegions],
 	);
 	const effectiveZoomRegions = useMemo<ZoomRegion[]>(
-		() =>
-			zoomRegions.map((region) => ({
-				...region,
-				startMs: toSourceTime(region.startMs),
-				endMs: toSourceTime(region.endMs),
-			})),
-		[zoomRegions, toSourceTime],
+		() => mapTimelineRegionsToSource(zoomRegions, clipRegions),
+		[zoomRegions, clipRegions],
+	);
+	const effectiveAnnotationRegions = useMemo<AnnotationRegion[]>(
+		() => mapTimelineRegionsToSource(timeline.annotationRegions, clipRegions),
+		[timeline.annotationRegions, clipRegions],
 	);
 	const effectiveCaptionRegions = useMemo<CaptionCue[]>(
 		() =>
@@ -119,7 +121,7 @@ export function useTimelineProjection({
 			.filter(({ speed }) => speed !== 1)
 			.map((clip) => ({
 				id: `clip-speed-${clip.id}`,
-				startMs: clip.startMs,
+				startMs: getClipSourceStartMs(clip),
 				endMs: getClipSourceEndMs(clip),
 				speed: clip.speed as SpeedRegion["speed"],
 			}));
@@ -140,6 +142,7 @@ export function useTimelineProjection({
 		mapTimelineTimeToSourceTime: toSourceTime,
 		mapSourceTimeToTimelineTime: toTimelineTime,
 		effectiveZoomRegions,
+		effectiveAnnotationRegions,
 		effectiveCaptionRegions,
 		timelinePlayheadTime,
 		timelineDuration,

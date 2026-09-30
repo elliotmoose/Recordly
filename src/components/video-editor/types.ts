@@ -227,17 +227,32 @@ export interface TrimRegion {
 
 export interface ClipRegion {
 	id: string;
+	/** Timeline position. */
 	startMs: number;
 	endMs: number;
 	speed: number;
 	muted?: boolean;
 	showSourceAudio?: boolean;
+	/**
+	 * Source position shown at `startMs`. Absent in projects saved before clips
+	 * could move independently of their content, where it equals `startMs`.
+	 */
+	sourceStartMs?: number;
+}
+
+function getSafeClipSpeed(clip: ClipRegion) {
+	return Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
+}
+
+export function getClipSourceStartMs(clip: ClipRegion): number {
+	return typeof clip.sourceStartMs === "number" && Number.isFinite(clip.sourceStartMs)
+		? clip.sourceStartMs
+		: clip.startMs;
 }
 
 export function getClipSourceEndMs(clip: ClipRegion): number {
 	const displayDurationMs = Math.max(0, clip.endMs - clip.startMs);
-	const speed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
-	return Math.round(clip.startMs + displayDurationMs * speed);
+	return Math.round(getClipSourceStartMs(clip) + displayDurationMs * getSafeClipSpeed(clip));
 }
 
 export function getTimelineDurationMs(clips: ClipRegion[], sourceDurationMs: number): number {
@@ -256,34 +271,40 @@ export function sortClipRegions(clips: ClipRegion[]): ClipRegion[] {
 	return [...clips].sort((left, right) => left.startMs - right.startMs);
 }
 
-function getSafeClipSpeed(clip: ClipRegion) {
-	return Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
-}
-
-function clampToNearestClipBoundary(
-	timeMs: number,
-	clips: ClipRegion[],
-	kind: "timeline" | "source",
-) {
-	let nearestTimeMs = Math.round(timeMs);
-	let nearestDistance = Number.POSITIVE_INFINITY;
-
+/** The timeline boundary nearest `timeMs`, mapped into source time. */
+function nearestTimelineBoundaryAsSource(timeMs: number, clips: ClipRegion[]) {
+	let best = { distance: Number.POSITIVE_INFINITY, sourceMs: Math.round(timeMs) };
 	for (const clip of clips) {
-		const boundaries =
-			kind === "timeline"
-				? [clip.startMs, clip.endMs]
-				: [clip.startMs, getClipSourceEndMs(clip)];
-
-		for (const boundary of boundaries) {
-			const distance = Math.abs(timeMs - boundary);
-			if (distance < nearestDistance) {
-				nearestDistance = distance;
-				nearestTimeMs = Math.round(boundary);
+		const candidates = [
+			{ at: clip.startMs, sourceMs: getClipSourceStartMs(clip) },
+			{ at: clip.endMs, sourceMs: getClipSourceEndMs(clip) },
+		];
+		for (const candidate of candidates) {
+			const distance = Math.abs(timeMs - candidate.at);
+			if (distance < best.distance) {
+				best = { distance, sourceMs: Math.round(candidate.sourceMs) };
 			}
 		}
 	}
+	return best.sourceMs;
+}
 
-	return nearestTimeMs;
+/** The source boundary nearest `sourceMs`, mapped into timeline time. */
+function nearestSourceBoundaryAsTimeline(sourceMs: number, clips: ClipRegion[]) {
+	let best = { distance: Number.POSITIVE_INFINITY, timelineMs: Math.round(sourceMs) };
+	for (const clip of clips) {
+		const candidates = [
+			{ at: getClipSourceStartMs(clip), timelineMs: clip.startMs },
+			{ at: getClipSourceEndMs(clip), timelineMs: clip.endMs },
+		];
+		for (const candidate of candidates) {
+			const distance = Math.abs(sourceMs - candidate.at);
+			if (distance < best.distance) {
+				best = { distance, timelineMs: Math.round(candidate.timelineMs) };
+			}
+		}
+	}
+	return best.timelineMs;
 }
 
 export function mapTimelineTimeToSourceTime(timeMs: number, clips: ClipRegion[]): number {
@@ -295,14 +316,16 @@ export function mapTimelineTimeToSourceTime(timeMs: number, clips: ClipRegion[])
 			continue;
 		}
 
-		return Math.round(clip.startMs + (roundedTimeMs - clip.startMs) * getSafeClipSpeed(clip));
+		return Math.round(
+			getClipSourceStartMs(clip) + (roundedTimeMs - clip.startMs) * getSafeClipSpeed(clip),
+		);
 	}
 
 	if (sortedClips.length === 0) {
 		return roundedTimeMs;
 	}
 
-	return clampToNearestClipBoundary(roundedTimeMs, sortedClips, "timeline");
+	return nearestTimelineBoundaryAsSource(roundedTimeMs, sortedClips);
 }
 
 export function mapSourceTimeToTimelineTime(timeMs: number, clips: ClipRegion[]): number {
@@ -310,19 +333,114 @@ export function mapSourceTimeToTimelineTime(timeMs: number, clips: ClipRegion[])
 	const sortedClips = sortClipRegions(clips);
 
 	for (const clip of sortedClips) {
+		const sourceStartMs = getClipSourceStartMs(clip);
 		const sourceEndMs = getClipSourceEndMs(clip);
-		if (roundedTimeMs < clip.startMs || roundedTimeMs > sourceEndMs) {
+		if (roundedTimeMs < sourceStartMs || roundedTimeMs > sourceEndMs) {
 			continue;
 		}
 
-		return Math.round(clip.startMs + (roundedTimeMs - clip.startMs) / getSafeClipSpeed(clip));
+		return Math.round(clip.startMs + (roundedTimeMs - sourceStartMs) / getSafeClipSpeed(clip));
 	}
 
 	if (sortedClips.length === 0) {
 		return roundedTimeMs;
 	}
 
-	return clampToNearestClipBoundary(roundedTimeMs, sortedClips, "source");
+	return nearestSourceBoundaryAsTimeline(roundedTimeMs, sortedClips);
+}
+
+/** One contiguous piece of the source, in the order it plays on the timeline. */
+export interface PlaybackSegment {
+	clipId: string;
+	timelineStartMs: number;
+	timelineEndMs: number;
+	sourceStartMs: number;
+	sourceEndMs: number;
+	speed: number;
+	muted: boolean;
+}
+
+export function getPlaybackSegments(clips: ClipRegion[]): PlaybackSegment[] {
+	return sortClipRegions(clips)
+		.filter((clip) => clip.endMs > clip.startMs)
+		.map((clip) => ({
+			clipId: clip.id,
+			timelineStartMs: clip.startMs,
+			timelineEndMs: clip.endMs,
+			sourceStartMs: getClipSourceStartMs(clip),
+			sourceEndMs: getClipSourceEndMs(clip),
+			speed: getSafeClipSpeed(clip),
+			muted: Boolean(clip.muted),
+		}));
+}
+
+/**
+ * True when the clips play the source front to back. Only then can the
+ * forward-only paths (native exporters, trim-based audio) render the edit.
+ */
+export function isSourceOrderMonotonic(segments: PlaybackSegment[]): boolean {
+	return segments.every(
+		(segment, index) => index === 0 || segment.sourceStartMs >= segments[index - 1].sourceEndMs,
+	);
+}
+
+/**
+ * The parts of the source that a timeline range covers, one piece per clip it
+ * overlaps. A timeline region spanning reordered clips maps to several
+ * disjoint source ranges.
+ */
+export function mapTimelineRangeToSourceRanges(
+	startMs: number,
+	endMs: number,
+	clips: ClipRegion[],
+): Array<{ startMs: number; endMs: number }> {
+	const pieces: Array<{ startMs: number; endMs: number }> = [];
+	for (const segment of getPlaybackSegments(clips)) {
+		const overlapStart = Math.max(startMs, segment.timelineStartMs);
+		const overlapEnd = Math.min(endMs, segment.timelineEndMs);
+		if (overlapEnd <= overlapStart) {
+			continue;
+		}
+		pieces.push({
+			startMs: Math.round(
+				segment.sourceStartMs + (overlapStart - segment.timelineStartMs) * segment.speed,
+			),
+			endMs: Math.round(
+				segment.sourceStartMs + (overlapEnd - segment.timelineStartMs) * segment.speed,
+			),
+		});
+	}
+	return pieces;
+}
+
+/**
+ * Timeline-time regions (zooms, annotations) expressed in source time for
+ * renderers that run on the source clock. When clips are reordered, a region
+ * splits per clip; extra pieces get suffixed ids so keys stay unique.
+ */
+export function mapTimelineRegionsToSource<
+	T extends { id: string; startMs: number; endMs: number },
+>(regions: T[], clips: ClipRegion[]): T[] {
+	if (clips.length === 0) {
+		return regions;
+	}
+	// In source order a region stays one continuous range (as it always has),
+	// so a zoom spanning a cut doesn't restart its animation at the cut.
+	if (isSourceOrderMonotonic(getPlaybackSegments(clips))) {
+		return regions.map((region) => ({
+			...region,
+			startMs: mapTimelineTimeToSourceTime(region.startMs, clips),
+			endMs: mapTimelineTimeToSourceTime(region.endMs, clips),
+		}));
+	}
+	return regions.flatMap((region) =>
+		mapTimelineRangeToSourceRanges(region.startMs, region.endMs, clips).map((piece, index) => ({
+			...region,
+			...(index === 0 ? {} : { id: `${region.id}#${index + 1}` }),
+			startMs: piece.startMs,
+			endMs: piece.endMs,
+		})),
+	);
 }
 
 export function findClipAtTimelineTime(timeMs: number, clips: ClipRegion[]): ClipRegion | null {
@@ -363,18 +481,20 @@ export function extendAutoFullTrackClip(
 	return [{ ...clip, endMs: nextTotalDurationMs }];
 }
 
-/** Convert clip regions (kept segments) to trim regions (gaps to remove). */
+/** Convert clip regions (kept segments) to trim regions (source ranges to remove). */
 export function clipsToTrims(clips: ClipRegion[], totalDurationMs: number): TrimRegion[] {
 	if (clips.length === 0) return [];
-	const sorted = [...clips].sort((a, b) => a.startMs - b.startMs);
+	const sourceRanges = clips
+		.map((clip) => ({ startMs: getClipSourceStartMs(clip), endMs: getClipSourceEndMs(clip) }))
+		.sort((a, b) => a.startMs - b.startMs);
 	const trims: TrimRegion[] = [];
 	let cursor = 0;
 	let trimId = 1;
-	for (const clip of sorted) {
-		if (clip.startMs > cursor) {
-			trims.push({ id: `trim-gap-${trimId++}`, startMs: cursor, endMs: clip.startMs });
+	for (const range of sourceRanges) {
+		if (range.startMs > cursor) {
+			trims.push({ id: `trim-gap-${trimId++}`, startMs: cursor, endMs: range.startMs });
 		}
-		cursor = getClipSourceEndMs(clip);
+		cursor = Math.max(cursor, range.endMs);
 	}
 	if (cursor < totalDurationMs) {
 		trims.push({ id: `trim-gap-${trimId++}`, startMs: cursor, endMs: totalDurationMs });

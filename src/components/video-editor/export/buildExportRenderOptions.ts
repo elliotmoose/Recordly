@@ -2,7 +2,12 @@ import type { ExportProgress } from "@/lib/exporter";
 import { toFileUrl } from "../projectPersistence";
 import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useTimelineState } from "../state/useTimelineState";
-import type { CursorTelemetryPoint, SpeedRegion, ZoomRegion } from "../types";
+import {
+	type CursorTelemetryPoint,
+	mapTimelineRegionsToSource,
+	type SpeedRegion,
+	type ZoomRegion,
+} from "../types";
 
 type AppearanceState = ReturnType<typeof useAppearanceState>;
 type TimelineState = ReturnType<typeof useTimelineState>;
@@ -60,7 +65,11 @@ export function buildExportRenderOptions({
 		webcamUrl:
 			appearance.resolvedWebcamVideoUrl ??
 			(appearance.webcam.sourcePath ? toFileUrl(appearance.webcam.sourcePath) : null),
-		annotationRegions: timeline.annotationRegions,
+		// Renderers run on the source clock; annotations are placed in timeline time.
+		annotationRegions: mapTimelineRegionsToSource(
+			timeline.annotationRegions,
+			timeline.clipRegions,
+		),
 		autoCaptions: timeline.autoCaptions,
 		autoCaptionSettings: timeline.autoCaptionSettings,
 		zoomRegions: effectiveZoomRegions,

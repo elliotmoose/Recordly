@@ -1,4 +1,4 @@
-import { type ClipRegion, getClipSourceEndMs } from "../types";
+import { type ClipRegion, getClipSourceEndMs, getClipSourceStartMs } from "../types";
 import { mergeRanges, subtractRanges } from "./silenceCuts";
 import type { RetakeDecision, RetakeGroup, SourceRange, TranscriptWord, Utterance } from "./types";
 
@@ -7,7 +7,10 @@ const MIN_CLIP_PIECE_MS = 40;
 
 /** Source range of each clip currently on the timeline. */
 export function getClipSourceRanges(clips: ClipRegion[]): SourceRange[] {
-	return clips.map((clip) => ({ startMs: clip.startMs, endMs: getClipSourceEndMs(clip) }));
+	return clips.map((clip) => ({
+		startMs: getClipSourceStartMs(clip),
+		endMs: getClipSourceEndMs(clip),
+	}));
 }
 
 /**
@@ -149,7 +152,7 @@ export function removeSourceRangesFromClips(
 	let changed = false;
 	const next = clips.flatMap((clip) => {
 		const speed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
-		const source = { startMs: clip.startMs, endMs: getClipSourceEndMs(clip) };
+		const source = { startMs: getClipSourceStartMs(clip), endMs: getClipSourceEndMs(clip) };
 		const pieces = subtractRanges([source], removals).filter(
 			(piece) => piece.endMs - piece.startMs >= MIN_CLIP_PIECE_MS,
 		);
@@ -161,12 +164,18 @@ export function removeSourceRangesFromClips(
 			return [clip];
 		}
 		changed = true;
-		return pieces.map((piece, index) => ({
-			...clip,
-			id: index === 0 ? clip.id : createClipId(),
-			startMs: Math.round(piece.startMs),
-			endMs: Math.round(piece.startMs + (piece.endMs - piece.startMs) / speed),
-		}));
+		return pieces.map((piece, index) => {
+			// Each surviving piece stays where its content sat on the timeline;
+			// ripple (if on) closes the gaps afterwards.
+			const timelineStartMs = clip.startMs + (piece.startMs - source.startMs) / speed;
+			return {
+				...clip,
+				id: index === 0 ? clip.id : createClipId(),
+				startMs: Math.round(timelineStartMs),
+				endMs: Math.round(timelineStartMs + (piece.endMs - piece.startMs) / speed),
+				sourceStartMs: Math.round(piece.startMs),
+			};
+		});
 	});
 	return changed ? next : clips;
 }

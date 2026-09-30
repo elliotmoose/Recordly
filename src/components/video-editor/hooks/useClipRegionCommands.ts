@@ -2,13 +2,14 @@ import type { Span } from "dnd-timeline";
 import { type Dispatch, type MutableRefObject, type SetStateAction, useCallback } from "react";
 import { toast } from "sonner";
 import { planClipSpeedChange } from "../clipSpeedChange";
-import type {
-	AnnotationRegion,
-	AudioRegion,
-	ClipRegion,
-	EditorEffectSection,
-	SpeedRegion,
-	ZoomRegion,
+import {
+	type AnnotationRegion,
+	type AudioRegion,
+	type ClipRegion,
+	type EditorEffectSection,
+	getClipSourceStartMs,
+	type SpeedRegion,
+	type ZoomRegion,
 } from "../types";
 
 type Translator = (
@@ -87,7 +88,14 @@ export function useClipRegionCommands({
 			const rightId = `clip-${nextClipIdRef.current++}`;
 			const splitAt = Math.round(splitMs);
 			const left: ClipRegion = { ...target, id: leftId, endMs: splitAt };
-			const right: ClipRegion = { ...target, id: rightId, startMs: splitAt };
+			const right: ClipRegion = {
+				...target,
+				id: rightId,
+				startMs: splitAt,
+				sourceStartMs: Math.round(
+					getClipSourceStartMs(target) + (splitAt - target.startMs) * target.speed,
+				),
+			};
 			setClipRegions((current) =>
 				current.flatMap((clip) => (clip.id === target.id ? [left, right] : [clip])),
 			);

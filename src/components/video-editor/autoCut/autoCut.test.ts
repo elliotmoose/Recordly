@@ -293,8 +293,8 @@ describe("removeSourceRangesFromClips", () => {
 			createId,
 		);
 		expect(result).toEqual([
-			{ id: "clip-1", startMs: 0, endMs: 2000, speed: 1 },
-			{ id: "clip-10", startMs: 3000, endMs: 9000, speed: 1 },
+			{ id: "clip-1", startMs: 0, endMs: 2000, speed: 1, sourceStartMs: 0 },
+			{ id: "clip-10", startMs: 3000, endMs: 9000, speed: 1, sourceStartMs: 3000 },
 		]);
 		expect(getClipSourceRanges(result)).toEqual([
 			{ startMs: 0, endMs: 2000 },
@@ -405,5 +405,23 @@ describe("snapRangeToSilence", () => {
 			startMs: 3000,
 			endMs: 3500,
 		});
+	});
+});
+
+describe("removeSourceRangesFromClips with moved clips", () => {
+	it("cuts by source position, not timeline position", () => {
+		// A clip showing source 10-20s placed at the start of the timeline.
+		const clips: ClipRegion[] = [
+			{ id: "a", startMs: 0, endMs: 10_000, speed: 1, sourceStartMs: 10_000 },
+		];
+		const result = removeSourceRangesFromClips(
+			clips,
+			[{ startMs: 12_000, endMs: 13_000 }],
+			() => "b",
+		);
+		expect(result).toEqual([
+			{ id: "a", startMs: 0, endMs: 2000, speed: 1, sourceStartMs: 10_000 },
+			{ id: "b", startMs: 3000, endMs: 10_000, speed: 1, sourceStartMs: 13_000 },
+		]);
 	});
 });
