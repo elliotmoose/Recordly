@@ -192,7 +192,9 @@ PKGBUILD, desktop entry, release sync, and optional **local-from-source** packag
 
 ### Prerequisites
 
-**macOS:** Xcode Command Line Tools (`xcode-select --install`).
+**All platforms:** Node.js 22 (the version CI uses) and Git.
+
+**macOS:** Xcode Command Line Tools (`xcode-select --install`) and CMake (`brew install cmake`). Without CMake, `npm install` skips building the bundled whisper.cpp runtime and caption generation won't work.
 
 **Linux (Ubuntu/Debian):**
 
@@ -210,6 +212,8 @@ cd recordly
 npm install
 npm run dev
 ```
+
+`npm install` also builds the native helpers, including the whisper.cpp runtime used for captions. The first time you generate captions, the app asks to download the Whisper model (about 466 MB). An API key is only needed for the optional AI assist in Auto-cut: add any OpenAI-compatible endpoint in the Auto-cut panel's settings.
 
 For packaged builds:
 
