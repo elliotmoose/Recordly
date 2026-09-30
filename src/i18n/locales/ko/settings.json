@@ -250,6 +250,7 @@
 		"aiExplainer": "OpenAI 호환 엔드포인트라면 무엇이든 됩니다. 대본 텍스트만 전송되며 오디오나 영상은 전송되지 않습니다.",
 		"aiEndpoint": "엔드포인트 URL",
 		"aiModel": "모델 이름",
+		"aiEffort": "추론 강도 (선택, 예: low)",
 		"aiKey": "API 키",
 		"aiKeyStored": "API 키 저장됨 (유지하려면 비워 두세요)",
 		"aiKeyNotEncrypted": "시스템 키체인을 찾지 못해 키가 암호화되지 않고 난독화되어 저장됩니다.",

@@ -4,6 +4,7 @@ import {
 	getClipSourceRanges,
 	removeSourceRangesFromClips,
 	retakeRemovalRanges,
+	snapRangeToSilence,
 	totalRangeMs,
 } from "./applyCuts";
 import { detectRetakeGroups, describeRetakeSimilarity } from "./retakeDetection";
@@ -55,6 +56,8 @@ describe("transcript helpers", () => {
 		["Uh, um.", true],
 		["So the next step is to open settings.", false],
 		["Let me show you the settings panel.", false],
+		["No wait.", true],
+		["And click next one more time to reach the summary page.", false],
 	])("isRetakeCue(%s) = %s", (text, expected) => {
 		expect(isRetakeCue(text)).toBe(expected);
 	});
@@ -347,5 +350,60 @@ describe("range helpers", () => {
 		];
 		expect(mergeRanges(ranges)).toEqual([{ startMs: 0, endMs: 900 }]);
 		expect(totalRangeMs(ranges)).toBe(900);
+	});
+});
+
+describe("retake false-positive guards", () => {
+	it("does not treat a numbered list as retakes", () => {
+		const words = speak(
+			Array.from({ length: 8 }, (_, index) => [
+				`Step ${index + 1}: adjust setting number ${index + 1} in the preview.`,
+				700,
+			]).flat(),
+		);
+		expect(detectRetakeGroups(segmentUtterances(words))).toEqual([]);
+	});
+
+	it("accepts a looser rewording when the speaker flagged the retake", () => {
+		const words = speak([
+			"The zoom follows your cursor automatically",
+			700,
+			"no wait.",
+			1200,
+			"Auto zoom follows your cursor automatically, so clicks are always in view.",
+		]);
+		expect(detectRetakeGroups(segmentUtterances(words))).toHaveLength(1);
+	});
+
+	it("needs the cue for that looser match", () => {
+		const words = speak([
+			"The zoom follows your cursor automatically",
+			1200,
+			"Auto zoom follows your cursor automatically, so clicks are always in view.",
+		]);
+		expect(detectRetakeGroups(segmentUtterances(words))).toEqual([]);
+	});
+});
+
+describe("snapRangeToSilence", () => {
+	const silences = [
+		{ startMs: 1000, endMs: 1800 },
+		{ startMs: 5000, endMs: 5400 },
+	];
+
+	it("moves drifted edges into the neighbouring silences", () => {
+		// Word times say the removed speech runs 1900-5200; the audio says the
+		// pauses are 1000-1800 and 5000-5400.
+		expect(snapRangeToSilence({ startMs: 1900, endMs: 5200 }, silences, 150)).toEqual({
+			startMs: 1150,
+			endMs: 5250,
+		});
+	});
+
+	it("leaves edges with no silence nearby alone", () => {
+		expect(snapRangeToSilence({ startMs: 3000, endMs: 3500 }, silences, 150)).toEqual({
+			startMs: 3000,
+			endMs: 3500,
+		});
 	});
 });

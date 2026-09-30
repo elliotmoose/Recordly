@@ -55,15 +55,23 @@ const CUE_PATTERNS = [
 	/\b(let me|lemme|i(?:'|’)?ll|i will|gonna|going to) (re ?do|redo|try|start|say|do) (that|this|it)?\s*(again|over)\b/,
 	/\b(let me|lemme) (re ?do|redo|restart|start over|try again|rephrase)\b/,
 	/\b(one more time|take two|take 2|from the top|start over|scratch that|try that again|do that again|once more)\b/,
-	/^(sorry|oops|whoops|wait|hold on|no no|actually no|ugh|okay again|ok again)\b/,
+	/^(sorry|oops|whoops|wait|no wait|hold on|no no|actually no|ugh|okay again|ok again|let me say that again)\b/,
 ];
+
+const MAX_CUE_TOKENS = 8;
 
 /** Utterances that are the speaker addressing the retake itself. */
 export function isRetakeCue(text: string): boolean {
-	const normalized = normalizeTokens(text).join(" ");
-	if (!normalized) {
+	const tokens = normalizeTokens(text);
+	if (tokens.length === 0) {
 		return true;
 	}
+	// Cues are short asides; a full sentence that happens to contain
+	// "one more time" is content, and cue utterances get deleted.
+	if (tokens.length > MAX_CUE_TOKENS) {
+		return false;
+	}
+	const normalized = tokens.join(" ");
 	return CUE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 

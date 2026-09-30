@@ -756,7 +756,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	autoCutGetLlmSettings: () => {
 		return ipcRenderer.invoke("auto-cut-get-llm-settings");
 	},
-	autoCutSetLlmSettings: (update: { baseUrl: string; model: string; apiKey?: string | null }) => {
+	autoCutSetLlmSettings: (update: {
+		baseUrl: string;
+		model: string;
+		reasoningEffort?: string;
+		apiKey?: string | null;
+	}) => {
 		return ipcRenderer.invoke("auto-cut-set-llm-settings", update);
 	},
 	autoCutLlmComplete: (request: {

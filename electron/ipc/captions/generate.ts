@@ -10,7 +10,13 @@ import { resolveRecordingSession } from "../project/session";
 import { getUsableCompanionAudioCandidates } from "../recording/diagnostics";
 import { normalizeVideoSourcePath } from "../utils";
 import { getCaptionCompanionAudioCandidates } from "./audioCandidates";
-import { parseSrtCues, parseWhisperJsonCues, shouldRetryWhisperWithoutJson } from "./parser";
+import {
+	getWhisperDtwPreset,
+	parseSrtCues,
+	parseWhisperJsonCues,
+	shouldRetryWhisperWithoutDtw,
+	shouldRetryWhisperWithoutJson,
+} from "./parser";
 import { isMissingWindowsWhisperRuntimeDependency } from "./runtimeErrors";
 import { segmentCuesIntoPhrases } from "./segment";
 import {
@@ -19,6 +25,7 @@ import {
 	SILENCE_NOISE_DB,
 	type SilenceInterval,
 } from "./silence";
+import { getWhisperThreadCount } from "./threads";
 
 const execFileAsync = promisify(execFile);
 
@@ -246,6 +253,8 @@ export async function generateAutoCaptionsFromVideo(options: {
 		const language =
 			options.language && options.language.trim() ? options.language.trim() : "auto";
 		const whisperBaseArgs = [
+			"-t",
+			String(getWhisperThreadCount()),
 			"-m",
 			whisperModelPath,
 			"-f",
@@ -259,8 +268,26 @@ export async function generateAutoCaptionsFromVideo(options: {
 		];
 
 		let jsonEnabled = true;
+		const dtwPreset = getWhisperDtwPreset(whisperModelPath);
+		// DTW gives far more accurate word times (needs flash attention off).
+		const dtwArgs = dtwPreset ? ["-dtw", dtwPreset, "-nfa"] : [];
 		try {
-			await executeWhisper(whisperExecutablePath, [...whisperBaseArgs, "-ojf"]);
+			try {
+				await executeWhisper(whisperExecutablePath, [
+					...whisperBaseArgs,
+					"-ojf",
+					...dtwArgs,
+				]);
+			} catch (error) {
+				if (dtwArgs.length === 0 || !shouldRetryWhisperWithoutDtw(error)) {
+					throw error;
+				}
+				console.warn(
+					"[auto-captions] Whisper runtime rejected DTW flags, retrying without:",
+					error,
+				);
+				await executeWhisper(whisperExecutablePath, [...whisperBaseArgs, "-ojf"]);
+			}
 		} catch (error) {
 			if (!shouldRetryWhisperWithoutJson(error)) {
 				throw error;

@@ -256,6 +256,7 @@
 		"aiExplainer": "Any OpenAI-compatible endpoint. Only the transcript text is sent, never audio or video.",
 		"aiEndpoint": "Endpoint URL",
 		"aiModel": "Model name",
+		"aiEffort": "Reasoning effort (optional, e.g. low)",
 		"aiKey": "API key",
 		"aiKeyStored": "API key saved (leave blank to keep)",
 		"aiKeyNotEncrypted": "No system keychain found, so the key is stored obfuscated rather than encrypted.",

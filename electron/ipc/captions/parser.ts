@@ -5,6 +5,8 @@ import type {
 	WhisperJsonToken,
 } from "../types";
 
+const WHISPER_SPECIAL_TOKEN = /^(\[_[A-Z0-9_]+\]|<\|[^|]*\|>)$/;
+
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
 }
@@ -16,12 +18,21 @@ export function buildCaptionTextFromWords(words: CaptionWordPayload[]): string {
 		.trim();
 }
 
+/**
+ * DTW token times land slightly after the word is heard (measured +180–380ms
+ * against acoustic onsets), so words start this much earlier.
+ */
+export const DTW_ONSET_LEAD_MS = 150;
+
 export function parseWhisperJsonWords(tokens: unknown): CaptionWordPayload[] {
 	if (!Array.isArray(tokens)) {
 		return [];
 	}
 
 	const words: CaptionWordPayload[] = [];
+	// Per word: DTW time of its first token (ms, or null) and its token duration.
+	const dtwStarts: Array<number | null> = [];
+	const tokenDurations: number[] = [];
 	let nextLeadingSpace = false;
 
 	for (const token of tokens) {
@@ -31,16 +42,24 @@ export function parseWhisperJsonWords(tokens: unknown): CaptionWordPayload[] {
 
 		const tokenData = token as WhisperJsonToken;
 		const tokenText = typeof tokenData.text === "string" ? tokenData.text : "";
-		if (!tokenText) {
+		// Control tokens like [_BEG_] / [_TT_150] carry no speech.
+		if (!tokenText || WHISPER_SPECIAL_TOKEN.test(tokenText.trim())) {
 			continue;
 		}
 
 		const tokenStartMs = isFiniteNumber(tokenData.offsets?.from)
 			? Math.round(tokenData.offsets.from)
 			: null;
-		const tokenEndMs = isFiniteNumber(tokenData.offsets?.to)
-			? Math.round(tokenData.offsets.to)
-			: null;
+		// Whisper often reports zero-length tokens; give them 1ms rather than
+		// discarding the timings of the whole segment.
+		const tokenEndMs =
+			isFiniteNumber(tokenData.offsets?.to) && tokenStartMs != null
+				? Math.max(tokenStartMs + 1, Math.round(tokenData.offsets.to))
+				: null;
+		const dtwMs =
+			isFiniteNumber(tokenData.t_dtw) && tokenData.t_dtw >= 0
+				? Math.round(tokenData.t_dtw * 10)
+				: null;
 		const parts = tokenText.match(/\s+|[^\s]+/g) ?? [];
 
 		for (const part of parts) {
@@ -49,7 +68,7 @@ export function parseWhisperJsonWords(tokens: unknown): CaptionWordPayload[] {
 				continue;
 			}
 
-			if (tokenStartMs == null || tokenEndMs == null || tokenEndMs <= tokenStartMs) {
+			if (tokenStartMs == null || tokenEndMs == null) {
 				return [];
 			}
 
@@ -61,16 +80,45 @@ export function parseWhisperJsonWords(tokens: unknown): CaptionWordPayload[] {
 					endMs: tokenEndMs,
 					...(words.length > 0 && nextLeadingSpace ? { leadingSpace: true } : {}),
 				});
+				dtwStarts.push(dtwMs);
+				tokenDurations.push(tokenEndMs - tokenStartMs);
 			} else {
 				previousWord.text += part;
 				previousWord.endMs = Math.max(previousWord.endMs, tokenEndMs);
+				tokenDurations[tokenDurations.length - 1] += tokenEndMs - tokenStartMs;
 			}
 
 			nextLeadingSpace = false;
 		}
 	}
 
-	return words.filter((word) => word.text.trim().length > 0);
+	const kept = words
+		.map((word, index) => ({ word, dtw: dtwStarts[index], duration: tokenDurations[index] }))
+		.filter((entry) => entry.word.text.trim().length > 0);
+
+	// Token offsets can be off by over a second at segment starts; DTW times are
+	// consistently close, so use them when every word has one.
+	if (kept.length > 0 && kept.every((entry) => entry.dtw != null)) {
+		const starts: number[] = [];
+		for (const entry of kept) {
+			const previous = starts[starts.length - 1];
+			starts.push(
+				Math.max(
+					previous == null ? 0 : previous + 1,
+					(entry.dtw as number) - DTW_ONSET_LEAD_MS,
+				),
+			);
+		}
+		kept.forEach((entry, index) => {
+			const next = starts[index + 1];
+			const spoken = Math.max(80, entry.duration);
+			entry.word.startMs = starts[index];
+			entry.word.endMs =
+				next == null ? starts[index] + spoken : Math.min(next, starts[index] + spoken);
+		});
+	}
+
+	return kept.map((entry) => entry.word);
 }
 
 export function parseWhisperJsonCues(content: string): CaptionCuePayload[] {
@@ -112,8 +160,9 @@ export function parseWhisperJsonCues(content: string): CaptionCuePayload[] {
 
 				return {
 					id: `caption-${index + 1}`,
-					startMs,
-					endMs,
+					// Word times are more accurate than segment offsets when present.
+					startMs: words.length > 0 ? words[0].startMs : startMs,
+					endMs: words.length > 0 ? words[words.length - 1].endMs : endMs,
 					text,
 					...(words.length > 0 ? { words } : {}),
 				};
@@ -180,4 +229,30 @@ export function parseSrtCues(content: string): CaptionCuePayload[] {
 export function shouldRetryWhisperWithoutJson(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
 	return /unknown argument|output-json-full|output-json|ojf|\boj\b/i.test(message);
+}
+
+export function shouldRetryWhisperWithoutDtw(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /unknown argument|dtw|-nfa|flash/i.test(message);
+}
+
+/**
+ * whisper.cpp's DTW alignment-head preset for a model file, e.g.
+ * `ggml-small.bin` → `small`, `ggml-large-v3-turbo-q5_0.bin` → `large.v3.turbo`.
+ * Unknown (custom/fine-tuned) models get none; DTW needs the right heads.
+ */
+export function getWhisperDtwPreset(modelPath: string): string | null {
+	const name = modelPath.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+	const match =
+		/^ggml-(tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)(\.en)?(?:-q\d_\d|-q\d_k)?\.bin$/.exec(
+			name,
+		);
+	if (!match) {
+		return null;
+	}
+	const [, size, english] = match;
+	if (english && size.startsWith("large")) {
+		return null;
+	}
+	return `${size.replace(/-/g, ".")}${english ?? ""}`;
 }

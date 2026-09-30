@@ -250,6 +250,7 @@
 		"aiExplainer": "Jeder OpenAI-kompatible Endpunkt. Es wird nur der Transkripttext gesendet, nie Audio oder Video.",
 		"aiEndpoint": "Endpunkt-URL",
 		"aiModel": "Modellname",
+		"aiEffort": "Denkaufwand (optional, z. B. low)",
 		"aiKey": "API-Schlüssel",
 		"aiKeyStored": "API-Schlüssel gespeichert (leer lassen zum Behalten)",
 		"aiKeyNotEncrypted": "Kein System-Schlüsselbund gefunden, der Schlüssel wird nur verschleiert statt verschlüsselt gespeichert.",

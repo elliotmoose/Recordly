@@ -737,6 +737,7 @@ interface Window {
 		autoCutSetLlmSettings: (update: {
 			baseUrl: string;
 			model: string;
+			reasoningEffort?: string;
 			apiKey?: string | null;
 		}) => Promise<AutoCutLlmSettings>;
 		autoCutLlmComplete: (request: {
@@ -1009,6 +1010,7 @@ interface SystemCursorAsset {
 interface AutoCutLlmSettings {
 	baseUrl: string;
 	model: string;
+	reasoningEffort: string;
 	hasApiKey: boolean;
 	keyEncrypted: boolean;
 }

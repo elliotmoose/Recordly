@@ -18,10 +18,27 @@ interface AutoCutPanelProps {
 	onOpenCaptions: () => void;
 }
 
+// DeepSeek V4.1 Flash at low effort matched Pro and high effort on our retake
+// benchmark (8/8) at a fraction of the latency.
 const AI_PRESETS = [
-	{ label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-	{ label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "" },
-	{ label: "Ollama", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
+	{
+		label: "DeepSeek",
+		baseUrl: "https://api.deepseek.com/v1",
+		model: "deepseek-flash",
+		reasoningEffort: "low",
+	},
+	{
+		label: "OpenRouter",
+		baseUrl: "https://openrouter.ai/api/v1",
+		model: "",
+		reasoningEffort: "",
+	},
+	{
+		label: "Ollama",
+		baseUrl: "http://localhost:11434/v1",
+		model: "llama3.1",
+		reasoningEffort: "",
+	},
 ];
 
 const rowClass =
@@ -369,10 +386,13 @@ function AiSettings({ t, controller }: SectionProps) {
 	const [apiKey, setApiKey] = useState("");
 	const settings = controller.llmSettings;
 
+	const [reasoningEffort, setReasoningEffort] = useState("");
+
 	useEffect(() => {
 		setBaseUrl(settings?.baseUrl ?? "");
 		setModel(settings?.model ?? "");
-	}, [settings?.baseUrl, settings?.model]);
+		setReasoningEffort(settings?.reasoningEffort ?? "");
+	}, [settings?.baseUrl, settings?.model, settings?.reasoningEffort]);
 
 	const inputClass =
 		"h-8 w-full rounded-md border border-foreground/10 bg-foreground/5 px-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-[#2563EB]";
@@ -393,6 +413,7 @@ function AiSettings({ t, controller }: SectionProps) {
 						onClick={() => {
 							setBaseUrl(preset.baseUrl);
 							if (preset.model) setModel(preset.model);
+							setReasoningEffort(preset.reasoningEffort);
 						}}
 						className="rounded-md bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground hover:bg-foreground/15"
 					>
@@ -413,6 +434,13 @@ function AiSettings({ t, controller }: SectionProps) {
 				onChange={(event) => setModel(event.target.value)}
 				placeholder={t("aiModel", "Model name")}
 				aria-label={t("aiModel", "Model name")}
+			/>
+			<input
+				className={inputClass}
+				value={reasoningEffort}
+				onChange={(event) => setReasoningEffort(event.target.value)}
+				placeholder={t("aiEffort", "Reasoning effort (optional, e.g. low)")}
+				aria-label={t("aiEffort", "Reasoning effort (optional, e.g. low)")}
 			/>
 			<input
 				className={inputClass}
@@ -442,6 +470,7 @@ function AiSettings({ t, controller }: SectionProps) {
 						void controller.saveLlmSettings({
 							baseUrl,
 							model,
+							reasoningEffort,
 							...(apiKey ? { apiKey } : {}),
 						});
 						setApiKey("");
@@ -463,7 +492,12 @@ function AiSettings({ t, controller }: SectionProps) {
 						size="sm"
 						variant="ghost"
 						onClick={() =>
-							void controller.saveLlmSettings({ baseUrl, model, apiKey: null })
+							void controller.saveLlmSettings({
+								baseUrl,
+								model,
+								reasoningEffort,
+								apiKey: null,
+							})
 						}
 					>
 						{t("aiClearKey", "Clear key")}

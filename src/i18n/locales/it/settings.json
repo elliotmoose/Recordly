@@ -250,6 +250,7 @@
 		"aiExplainer": "Qualsiasi endpoint compatibile con OpenAI. Viene inviato solo il testo della trascrizione, mai audio o video.",
 		"aiEndpoint": "URL endpoint",
 		"aiModel": "Nome modello",
+		"aiEffort": "Sforzo di ragionamento (facoltativo, es. low)",
 		"aiKey": "Chiave API",
 		"aiKeyStored": "Chiave API salvata (lascia vuoto per mantenerla)",
 		"aiKeyNotEncrypted": "Nessun portachiavi di sistema: la chiave è salvata offuscata anziché cifrata.",

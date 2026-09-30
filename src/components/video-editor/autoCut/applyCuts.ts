@@ -41,6 +41,48 @@ export function wordRunRemovalRange(
 	};
 }
 
+/** How far a cut edge may move to land inside real silence. */
+const SILENCE_SNAP_WINDOW_MS = 500;
+
+/**
+ * Move a cut's edges into the nearest acoustic silence, leaving up to `keepMs`
+ * of it next to the speech that stays. Transcriber word times drift by a few
+ * hundred ms; the audio doesn't, so this keeps cuts from clipping syllables.
+ */
+export function snapRangeToSilence(
+	range: SourceRange,
+	silences: SourceRange[],
+	keepMs: number,
+): SourceRange {
+	const nearest = (edge: number) => {
+		let best: SourceRange | null = null;
+		let bestDistance = SILENCE_SNAP_WINDOW_MS;
+		for (const silence of silences) {
+			const distance =
+				edge < silence.startMs
+					? silence.startMs - edge
+					: edge > silence.endMs
+						? edge - silence.endMs
+						: 0;
+			if (distance <= bestDistance) {
+				best = silence;
+				bestDistance = distance;
+			}
+		}
+		return best;
+	};
+
+	const before = nearest(range.startMs);
+	const after = nearest(range.endMs);
+	const startMs = before
+		? before.startMs + Math.min(keepMs, (before.endMs - before.startMs) / 2)
+		: range.startMs;
+	const endMs = after
+		? after.endMs - Math.min(keepMs, (after.endMs - after.startMs) / 2)
+		: range.endMs;
+	return endMs > startMs ? { startMs: Math.round(startMs), endMs: Math.round(endMs) } : range;
+}
+
 /** Source ranges to remove so that only the chosen take of a group remains. */
 export function retakeRemovalRanges(
 	group: RetakeGroup,
@@ -48,6 +90,7 @@ export function retakeRemovalRanges(
 	utterances: Utterance[],
 	words: TranscriptWord[],
 	keepMs: number,
+	acousticSilences?: SourceRange[] | null,
 ): SourceRange[] {
 	if (decision === undefined || decision === "all" || !group.takes[decision]) {
 		return [];
@@ -81,7 +124,11 @@ export function retakeRemovalRanges(
 			runStart = next;
 		}
 	}
-	return mergeRanges(ranges);
+	return mergeRanges(
+		acousticSilences?.length
+			? ranges.map((range) => snapRangeToSilence(range, acousticSilences, keepMs))
+			: ranges,
+	);
 }
 
 /**

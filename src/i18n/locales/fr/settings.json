@@ -250,6 +250,7 @@
 		"aiExplainer": "N’importe quel endpoint compatible OpenAI. Seul le texte de la transcription est envoyé, jamais l’audio ni la vidéo.",
 		"aiEndpoint": "URL de l’endpoint",
 		"aiModel": "Nom du modèle",
+		"aiEffort": "Effort de raisonnement (facultatif, ex. low)",
 		"aiKey": "Clé API",
 		"aiKeyStored": "Clé API enregistrée (laisser vide pour la conserver)",
 		"aiKeyNotEncrypted": "Aucun trousseau système trouvé : la clé est stockée obscurcie plutôt que chiffrée.",

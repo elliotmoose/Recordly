@@ -191,6 +191,8 @@ export type WhisperJsonToken = {
 		from?: unknown;
 		to?: unknown;
 	};
+	/** DTW-aligned token time in centiseconds (-1 when DTW is off). */
+	t_dtw?: unknown;
 };
 
 export type WhisperJsonSegment = {

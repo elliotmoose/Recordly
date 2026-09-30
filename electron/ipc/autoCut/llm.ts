@@ -7,6 +7,8 @@ const REQUEST_TIMEOUT_MS = 90_000;
 interface StoredLlmSettings {
 	baseUrl: string;
 	model: string;
+	/** Sent as `reasoning_effort` when set (e.g. "low" for DeepSeek V4). */
+	reasoningEffort: string;
 	/** Encrypted with safeStorage when available, else base64 ("plain"). */
 	apiKey: string | null;
 	apiKeyEncoding: "safeStorage" | "plain" | null;
@@ -15,6 +17,7 @@ interface StoredLlmSettings {
 export interface LlmSettingsView {
 	baseUrl: string;
 	model: string;
+	reasoningEffort: string;
 	hasApiKey: boolean;
 	/** False when the OS keychain isn't available and the key is only obfuscated. */
 	keyEncrypted: boolean;
@@ -23,6 +26,7 @@ export interface LlmSettingsView {
 export interface LlmSettingsUpdate {
 	baseUrl: string;
 	model: string;
+	reasoningEffort?: string;
 	/** undefined keeps the stored key, null or "" clears it. */
 	apiKey?: string | null;
 }
@@ -48,6 +52,7 @@ function readStoredSettings(): StoredLlmSettings {
 	return {
 		baseUrl: typeof value.baseUrl === "string" ? value.baseUrl : "",
 		model: typeof value.model === "string" ? value.model : "",
+		reasoningEffort: typeof value.reasoningEffort === "string" ? value.reasoningEffort : "",
 		apiKey: typeof value.apiKey === "string" && value.apiKey ? value.apiKey : null,
 		apiKeyEncoding:
 			value.apiKeyEncoding === "safeStorage" || value.apiKeyEncoding === "plain"
@@ -75,6 +80,7 @@ export function getLlmSettings(): LlmSettingsView {
 	return {
 		baseUrl: settings.baseUrl,
 		model: settings.model,
+		reasoningEffort: settings.reasoningEffort,
 		hasApiKey: Boolean(settings.apiKey),
 		keyEncrypted: settings.apiKeyEncoding === "safeStorage",
 	};
@@ -86,6 +92,9 @@ export function setLlmSettings(update: LlmSettingsUpdate): LlmSettingsView {
 		...current,
 		baseUrl: update.baseUrl.trim(),
 		model: update.model.trim(),
+		...(update.reasoningEffort !== undefined
+			? { reasoningEffort: update.reasoningEffort.trim() }
+			: {}),
 	};
 
 	if (update.apiKey !== undefined) {
@@ -126,7 +135,8 @@ export async function runLlmCompletion(
 	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 	const startedAt = Date.now();
 
-	const send = async (json: boolean) =>
+	// `extras` are optional request fields a strict server may reject.
+	const send = async (extras: boolean) =>
 		net.fetch(getChatCompletionsUrl(settings.baseUrl), {
 			method: "POST",
 			headers: {
@@ -136,20 +146,25 @@ export async function runLlmCompletion(
 			body: JSON.stringify({
 				model: settings.model,
 				temperature: 0,
-				max_tokens: request.maxTokens ?? 4000,
+				// Reasoning tokens count toward this, so leave generous headroom.
+				max_tokens: request.maxTokens ?? 8000,
 				messages: [
 					{ role: "system", content: request.system },
 					{ role: "user", content: request.user },
 				],
-				...(json ? { response_format: { type: "json_object" } } : {}),
+				...(extras && request.json ? { response_format: { type: "json_object" } } : {}),
+				...(extras && settings.reasoningEffort
+					? { reasoning_effort: settings.reasoningEffort }
+					: {}),
 			}),
 			signal: controller.signal,
 		});
 
 	try {
-		let response = await send(Boolean(request.json));
-		// Some OpenAI-compatible servers reject response_format; retry without it.
-		if (request.json && response.status === 400) {
+		let response = await send(true);
+		// Some OpenAI-compatible servers reject response_format or
+		// reasoning_effort; retry without the optional fields.
+		if (response.status === 400 && (request.json || settings.reasoningEffort)) {
 			response = await send(false);
 		}
 		const bodyText = await response.text();

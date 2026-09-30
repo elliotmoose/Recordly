@@ -250,6 +250,7 @@
 		"aiExplainer": "支援任何相容 OpenAI 的端點。只傳送字幕文字，絕不傳送音訊或影片。",
 		"aiEndpoint": "端點網址",
 		"aiModel": "模型名稱",
+		"aiEffort": "推理強度（選填，例如 low）",
 		"aiKey": "API 金鑰",
 		"aiKeyStored": "API 金鑰已儲存（留空則維持不變）",
 		"aiKeyNotEncrypted": "找不到系統鑰匙圈，金鑰將以混淆方式而非加密方式儲存。",

@@ -10,6 +10,8 @@ export interface RetakeDetectionOptions {
 }
 
 const MIN_TOKENS = 3;
+/** Groups that would have this many takes or more are treated as patterns. */
+const MAX_TAKES = 4;
 
 /** Length of the longest common subsequence of two token lists. */
 export function lcsLength(left: string[], right: string[]): number {
@@ -35,14 +37,58 @@ function commonPrefixLength(left: string[], right: string[]) {
 	return length;
 }
 
+const NUMBER_WORDS = new Set([
+	"zero",
+	"one",
+	"two",
+	"three",
+	"four",
+	"five",
+	"six",
+	"seven",
+	"eight",
+	"nine",
+	"ten",
+	"first",
+	"second",
+	"third",
+	"fourth",
+	"fifth",
+	"next",
+	"last",
+]);
+
+function isNumberToken(token: string) {
+	return /^\d+$/.test(token) || NUMBER_WORDS.has(token);
+}
+
+/**
+ * True when the two lines differ in a number ("step 2" vs "step 3"). That is
+ * an enumeration the speaker is walking through, not a second attempt.
+ */
+function differsInNumbers(earlier: string[], later: string[]) {
+	const earlierNumbers = earlier.filter(isNumberToken);
+	const laterNumbers = later.filter(isNumberToken);
+	return (
+		earlierNumbers.length > 0 &&
+		laterNumbers.length > 0 &&
+		earlierNumbers.join(" ") !== laterNumbers.slice(0, earlierNumbers.length).join(" ")
+	);
+}
+
 /**
  * Why `later` looks like another attempt at `earlier`, or null. Retakes almost
  * always restart the same way, so a shared opening is the strongest signal; a
- * high in-order word overlap catches restarts with a changed first word.
+ * high in-order word overlap catches restarts with a changed first word. When
+ * the speaker flagged the retake ("sorry", "no wait"), a looser match counts.
  */
-export function describeRetakeSimilarity(earlier: string[], later: string[]): string | null {
+export function describeRetakeSimilarity(
+	earlier: string[],
+	later: string[],
+	options: { afterCue?: boolean } = {},
+): string | null {
 	const shorter = Math.min(earlier.length, later.length);
-	if (shorter < MIN_TOKENS) {
+	if (shorter < MIN_TOKENS || differsInNumbers(earlier, later)) {
 		return null;
 	}
 
@@ -52,7 +98,12 @@ export function describeRetakeSimilarity(earlier: string[], later: string[]): st
 	}
 
 	const lcs = lcsLength(earlier, later);
-	if (lcs >= 4 && lcs / shorter >= 0.8 && lcs / Math.max(earlier.length, later.length) >= 0.5) {
+	const minLongerRatio = options.afterCue ? 0.35 : 0.5;
+	if (
+		lcs >= 4 &&
+		lcs / shorter >= 0.8 &&
+		lcs / Math.max(earlier.length, later.length) >= minLongerRatio
+	) {
 		return `${Math.round((lcs / shorter) * 100)}% of the words repeat in order`;
 	}
 
@@ -171,7 +222,9 @@ function growGroupFrom(
 		takeStart = match.index;
 	}
 
-	if (takes.length === 0) {
+	// More than a few "attempts" in a row is a pattern the speaker is repeating
+	// on purpose (a list, a refrain), not someone redoing a line.
+	if (takes.length === 0 || takes.length >= MAX_TAKES) {
 		return null;
 	}
 
@@ -228,6 +281,7 @@ function findNextAttempt(
 ) {
 	const anchor = units[takeStart];
 	let substantiveSeen = 1;
+	let afterCue = false;
 
 	for (let index = takeStart + 1; index < units.length; index += 1) {
 		const candidate = units[index];
@@ -235,9 +289,10 @@ function findNextAttempt(
 			return null;
 		}
 		if (candidate.isCue) {
+			afterCue = true;
 			continue;
 		}
-		const reason = describeRetakeSimilarity(anchor.tokens, candidate.tokens);
+		const reason = describeRetakeSimilarity(anchor.tokens, candidate.tokens, { afterCue });
 		if (reason) {
 			return { index, reason };
 		}

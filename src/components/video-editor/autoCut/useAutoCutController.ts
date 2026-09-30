@@ -230,6 +230,7 @@ export function useAutoCutController({
 					utterances,
 					words,
 					silenceSettings.keepMs,
+					acousticIntervals,
 				),
 			);
 		}
@@ -243,6 +244,7 @@ export function useAutoCutController({
 		silenceSettings.keepMs,
 		utterances,
 		words,
+		acousticIntervals,
 	]);
 
 	const savedMs = useMemo(() => totalRangeMs(removalRanges), [removalRanges]);
@@ -314,7 +316,12 @@ export function useAutoCutController({
 	}, [currentTime, previewRange, videoPlaybackRef]);
 
 	const saveLlmSettings = useCallback(
-		async (update: { baseUrl: string; model: string; apiKey?: string | null }) => {
+		async (update: {
+			baseUrl: string;
+			model: string;
+			reasoningEffort?: string;
+			apiKey?: string | null;
+		}) => {
 			if (!window.electronAPI?.autoCutSetLlmSettings) {
 				return;
 			}

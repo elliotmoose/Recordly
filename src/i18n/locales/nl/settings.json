@@ -250,6 +250,7 @@
 		"aiExplainer": "Elk OpenAI-compatibel endpoint. Alleen de transcripttekst wordt verstuurd, nooit audio of video.",
 		"aiEndpoint": "Endpoint-URL",
 		"aiModel": "Modelnaam",
+		"aiEffort": "Redeneerinspanning (optioneel, bijv. low)",
 		"aiKey": "API-sleutel",
 		"aiKeyStored": "API-sleutel opgeslagen (leeg laten om te behouden)",
 		"aiKeyNotEncrypted": "Geen systeemsleutelhanger gevonden, dus de sleutel wordt versluierd in plaats van versleuteld opgeslagen.",

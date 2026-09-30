@@ -250,6 +250,7 @@
 		"aiExplainer": "支持任何兼容 OpenAI 的接口。只发送字幕文本，绝不发送音频或视频。",
 		"aiEndpoint": "接口地址",
 		"aiModel": "模型名称",
+		"aiEffort": "推理强度（可选，例如 low）",
 		"aiKey": "API 密钥",
 		"aiKeyStored": "API 密钥已保存（留空则保持不变）",
 		"aiKeyNotEncrypted": "未找到系统钥匙串，密钥将以混淆方式而非加密方式保存。",
