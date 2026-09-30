@@ -7,7 +7,7 @@ import { calculateMp4ExportDimensions } from "../exportDimensions";
 import { resolveMp4ExportRouting } from "../mp4ExportRouting";
 import { resolveMp4ExportSettings } from "../mp4ExportSettings";
 import { createSmokeExportProgressSampler } from "../smokeExportProgress";
-import { buildExportRenderOptions } from "./buildExportRenderOptions";
+import { buildExportAudioTimeline, buildExportRenderOptions } from "./buildExportRenderOptions";
 import {
 	type PendingExportSave,
 	saveExportBlob,
@@ -297,7 +297,7 @@ export function useExportRunner(input: ExportRunnerInput) {
 								setExportProgress(progress);
 							},
 						}),
-						audioRegions,
+						...buildExportAudioTimeline(clipRegions, audioRegions),
 						clipRegions,
 						sourceAudioFallbackPaths: audio.sourceAudioFallbackPaths,
 						sourceAudioFallbackStartDelayMsByPath:

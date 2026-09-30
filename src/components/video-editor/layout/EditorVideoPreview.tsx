@@ -11,6 +11,7 @@ import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useTimelineState } from "../state/useTimelineState";
 import {
 	type CursorTelemetryPoint,
+	getPlaybackSegments,
 	mapTimelineRegionsToSource,
 	type SpeedRegion,
 	type ZoomRegion,
@@ -76,6 +77,10 @@ export function EditorVideoPreview({
 	handlers,
 }: Props) {
 	// The preview runs on the source clock; annotations are placed in timeline time.
+	const playbackSegments = useMemo(
+		() => getPlaybackSegments(timeline.clipRegions),
+		[timeline.clipRegions],
+	);
 	const sourceAnnotationRegions = useMemo(
 		() => mapTimelineRegionsToSource(timeline.annotationRegions, timeline.clipRegions),
 		[timeline.annotationRegions, timeline.clipRegions],
@@ -143,7 +148,7 @@ export function EditorVideoPreview({
 			webcamVideoPath={
 				appearance.webcam.sourcePath ? appearance.resolvedWebcamVideoUrl : null
 			}
-			trimRegions={timeline.trimRegions}
+			playbackSegments={playbackSegments}
 			speedRegions={effectiveSpeedRegions}
 			annotationRegions={sourceAnnotationRegions}
 			autoCaptions={timeline.autoCaptions}

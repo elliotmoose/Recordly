@@ -150,6 +150,43 @@ export function getDecodedFrameTimelineOffsetUs(
 	);
 }
 
+export interface DecodeAllOptions {
+	/**
+	 * Source ranges to play, in output order. Only needed when clips are
+	 * reordered on the timeline; otherwise the trims describe the edit.
+	 */
+	sourceOrder?: Array<{ startMs: number; endMs: number }>;
+}
+
+interface DecodeRunState {
+	exportFrameIndex: number;
+	/** Timestamp origin measured by the first run, which reads from the file start. */
+	origin: { firstDecodedFrameTimestampUs: number; decodedFrameTimelineOffsetUs: number } | null;
+}
+
+/** Seek a little before a later run's first frame so its keyframe lookup has slack. */
+const RUN_SEEK_PREROLL_SEC = 0.05;
+
+/**
+ * Split output-ordered segments into runs that each play the source front to
+ * back. In-order edits are a single run.
+ */
+export function splitIntoSourceOrderRuns<T extends { startSec: number; endSec: number }>(
+	segments: T[],
+): T[][] {
+	const runs: T[][] = [];
+	for (const segment of segments) {
+		const run = runs[runs.length - 1];
+		const previous = run?.[run.length - 1];
+		if (run && previous && segment.startSec >= previous.endSec - 0.0001) {
+			run.push(segment);
+		} else {
+			runs.push([segment]);
+		}
+	}
+	return runs;
+}
+
 /**
  * Decodes video frames via web-demuxer + VideoDecoder in a single forward pass.
  * Way faster than seeking an HTMLVideoElement per frame.
@@ -163,6 +200,8 @@ export class StreamingVideoDecoder {
 	private cancelled = false;
 	private metadata: DecodedVideoInfo | null = null;
 	private pendingFrames: VideoFrame[] = [];
+	private loadedVideoUrl: string | null = null;
+	private loadedOptions: StreamingVideoDecoderLoadOptions = {};
 	private readonly maxDecodeQueue: number;
 	private readonly maxPendingFrames: number;
 
@@ -184,6 +223,8 @@ export class StreamingVideoDecoder {
 		videoUrl: string,
 		options: StreamingVideoDecoderLoadOptions = {},
 	): Promise<DecodedVideoInfo> {
+		this.loadedVideoUrl = videoUrl;
+		this.loadedOptions = options;
 		if (this.decoder) {
 			try {
 				if (this.decoder.state === "configured") {
@@ -286,7 +327,36 @@ export class StreamingVideoDecoder {
 		trimRegions: TrimRegion[] | undefined,
 		speedRegions: SpeedRegion[] | undefined,
 		onFrame: OnFrameCallback,
+		options: DecodeAllOptions = {},
 	): Promise<void> {
+		if (!this.demuxer || !this.metadata) {
+			throw new Error("Must call loadMetadata() before decodeAll()");
+		}
+
+		const segments = this.splitBySpeed(this.getKeepRanges(trimRegions, options), speedRegions);
+		const runs = splitIntoSourceOrderRuns(segments);
+		let state: DecodeRunState = { exportFrameIndex: 0, origin: null };
+		for (let runIndex = 0; runIndex < runs.length && !this.cancelled; runIndex += 1) {
+			if (runIndex > 0) {
+				// A cancelled read leaves the demuxer unusable; start the next run fresh.
+				await this.reloadDemuxer();
+			}
+			state = await this.decodeRun(targetFrameRate, runs[runIndex], onFrame, state);
+		}
+	}
+
+	/**
+	 * Decode one run of segments that play the source front to back. The first
+	 * run reads from the start of the file, exactly as a single-pass export
+	 * always has; later runs (clips reordered on the timeline) seek to their
+	 * first segment and reuse the first run's timestamp origin.
+	 */
+	private async decodeRun(
+		targetFrameRate: number,
+		segments: Array<{ startSec: number; endSec: number; speed: number }>,
+		onFrame: OnFrameCallback,
+		runState: DecodeRunState,
+	): Promise<DecodeRunState> {
 		if (!this.demuxer || !this.metadata) {
 			throw new Error("Must call loadMetadata() before decodeAll()");
 		}
@@ -294,14 +364,6 @@ export class StreamingVideoDecoder {
 		const decoderConfig = await this.demuxer.getDecoderConfig("video");
 		const codec = this.metadata.codec.toLowerCase();
 		const shouldPreferSoftwareDecode = codec.includes("av01") || codec.includes("av1");
-		const effectiveVideoDuration = getEffectiveVideoStreamDurationSeconds({
-			duration: this.metadata.duration,
-			streamDuration: this.metadata.streamDuration,
-		});
-		const segments = this.splitBySpeed(
-			this.computeSegments(effectiveVideoDuration, trimRegions),
-			speedRegions,
-		);
 		const segmentOutputFrameCounts = segments.map((segment) =>
 			Math.ceil(((segment.endSec - segment.startSec) / segment.speed) * targetFrameRate),
 		);
@@ -316,7 +378,8 @@ export class StreamingVideoDecoder {
 			1,
 			Math.round(targetFrameRate * startupStabilizationSeconds),
 		);
-		let exportFrameIndex = 0;
+		let exportFrameIndex = runState.exportFrameIndex;
+		const runStartFrameIndex = exportFrameIndex;
 		let loggedSteadyStateBackpressure = false;
 		const backpressureWaiters = new Set<() => void>();
 
@@ -347,8 +410,9 @@ export class StreamingVideoDecoder {
 		let frameResolve: ((frame: VideoFrame | null) => void) | null = null;
 		let decodeError: Error | null = null;
 		let decodeDone = false;
-		let firstDecodedFrameTimestampUs: number | null = null;
-		let decodedFrameTimelineOffsetUs = 0;
+		let firstDecodedFrameTimestampUs: number | null =
+			runState.origin?.firstDecodedFrameTimestampUs ?? null;
+		let decodedFrameTimelineOffsetUs = runState.origin?.decodedFrameTimelineOffsetUs ?? 0;
 		let submittedChunkCount = 0;
 		let lastSubmittedChunk: EncodedVideoChunk | undefined;
 		let lastSubmittedChunkIndex: number | undefined;
@@ -432,7 +496,18 @@ export class StreamingVideoDecoder {
 				(this.metadata.streamDuration ?? this.metadata.duration) +
 					(this.metadata.streamStartTime ?? this.metadata.mediaStartTime ?? 0),
 			) + 0.5;
-		const reader = this.demuxer.read("video", 0, readEndSec).getReader();
+		// Later runs seek: the demuxer starts at the keyframe at or before this time.
+		const readStartSec = runState.origin
+			? Math.max(
+					0,
+					segments[0].startSec +
+						(runState.origin.firstDecodedFrameTimestampUs -
+							runState.origin.decodedFrameTimelineOffsetUs) /
+							1_000_000 -
+						RUN_SEEK_PREROLL_SEC,
+				)
+			: 0;
+		const reader = this.demuxer.read("video", readStartSec, readEndSec).getReader();
 
 		// Feed chunks to decoder in background with backpressure
 		const feedPromise = (async () => {
@@ -690,12 +765,50 @@ export class StreamingVideoDecoder {
 			!this.cancelled &&
 			lastDecodedFrameSec !== null &&
 			requiredEndSec - lastDecodedFrameSec > 1 &&
-			exportFrameIndex < expectedOutputFrames
+			exportFrameIndex - runStartFrameIndex < expectedOutputFrames
 		) {
 			throw new Error(
-				`Video decode ended early at ${lastDecodedFrameSec.toFixed(3)}s (needed ${requiredEndSec.toFixed(3)}s; rendered ${exportFrameIndex}/${expectedOutputFrames} frames).`,
+				`Video decode ended early at ${lastDecodedFrameSec.toFixed(3)}s (needed ${requiredEndSec.toFixed(3)}s; rendered ${exportFrameIndex - runStartFrameIndex}/${expectedOutputFrames} frames).`,
 			);
 		}
+
+		return {
+			exportFrameIndex,
+			origin:
+				firstDecodedFrameTimestampUs === null
+					? runState.origin
+					: { firstDecodedFrameTimestampUs, decodedFrameTimelineOffsetUs },
+		};
+	}
+
+	/**
+	 * Source ranges to keep, in output order: explicit when clips are reordered,
+	 * otherwise the complement of the trims (the long-standing path).
+	 */
+	private getKeepRanges(
+		trimRegions: TrimRegion[] | undefined,
+		options: DecodeAllOptions,
+	): Array<{ startSec: number; endSec: number }> {
+		const effectiveVideoDuration = getEffectiveVideoStreamDurationSeconds({
+			duration: this.metadata?.duration ?? 0,
+			streamDuration: this.metadata?.streamDuration,
+		});
+		if (!options.sourceOrder) {
+			return this.computeSegments(effectiveVideoDuration, trimRegions);
+		}
+		return options.sourceOrder
+			.map((range) => ({
+				startSec: Math.max(0, range.startMs / 1000),
+				endSec: Math.min(effectiveVideoDuration, range.endMs / 1000),
+			}))
+			.filter((range) => range.endSec - range.startSec > 0.0001);
+	}
+
+	private async reloadDemuxer(): Promise<void> {
+		if (!this.loadedVideoUrl) {
+			throw new Error("Must call loadMetadata() before decodeAll()");
+		}
+		await this.loadMetadata(this.loadedVideoUrl, this.loadedOptions);
 	}
 
 	private computeSegments(
@@ -726,16 +839,16 @@ export class StreamingVideoDecoder {
 		return segments;
 	}
 
-	getEffectiveDuration(trimRegions?: TrimRegion[], speedRegions?: SpeedRegion[]): number {
+	getEffectiveDuration(
+		trimRegions?: TrimRegion[],
+		speedRegions?: SpeedRegion[],
+		options: DecodeAllOptions = {},
+	): number {
 		if (!this.metadata) throw new Error("Must call loadMetadata() first");
-		const trimSegments = this.computeSegments(
-			getEffectiveVideoStreamDurationSeconds({
-				duration: this.metadata.duration,
-				streamDuration: this.metadata.streamDuration,
-			}),
-			trimRegions,
+		const speedSegments = this.splitBySpeed(
+			this.getKeepRanges(trimRegions, options),
+			speedRegions,
 		);
-		const speedSegments = this.splitBySpeed(trimSegments, speedRegions);
 		return speedSegments.reduce((sum, seg) => sum + (seg.endSec - seg.startSec) / seg.speed, 0);
 	}
 

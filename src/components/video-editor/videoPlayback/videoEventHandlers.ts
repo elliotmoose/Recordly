@@ -1,6 +1,7 @@
 import type React from "react";
 import { enablePitchPreservingPlayback } from "@/lib/mediaTiming";
-import type { SpeedRegion, TrimRegion } from "../types";
+import type { PlaybackSegment, SpeedRegion } from "../types";
+import { resolvePlaybackStep } from "./playbackSegments";
 
 interface PresentedFrameMetadata {
 	mediaTime?: number;
@@ -23,13 +24,14 @@ interface VideoEventHandlersParams {
 	timeUpdateAnimationRef: React.MutableRefObject<number | null>;
 	onPlayStateChange: (playing: boolean) => void;
 	onTimeUpdate: (time: number) => void;
-	trimRegionsRef: React.MutableRefObject<TrimRegion[]>;
+	/** Clips in timeline order; playback follows them. */
+	playbackSegmentsRef: React.MutableRefObject<PlaybackSegment[]>;
 	speedRegionsRef: React.MutableRefObject<SpeedRegion[]>;
 }
 
 /**
- * Bind media events to the preview's presented-frame clock while honoring trim
- * and speed regions.
+ * Bind media events to the preview's presented-frame clock, playing the clips
+ * in timeline order (skipping removed footage) and honoring speed regions.
  */
 export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 	const {
@@ -42,7 +44,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		timeUpdateAnimationRef,
 		onPlayStateChange,
 		onTimeUpdate,
-		trimRegionsRef,
+		playbackSegmentsRef,
 		speedRegionsRef,
 	} = params;
 	const presentedFrameVideo = video as PresentedFrameVideoElement;
@@ -54,16 +56,8 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		onTimeUpdate(timeValue);
 	};
 
-	// Helper function to check if current time is within a trim region
-	const findActiveTrimRegion = (currentTimeMs: number): TrimRegion | null => {
-		const trimRegions = trimRegionsRef.current;
-		return (
-			trimRegions.find(
-				(region) => currentTimeMs >= region.startMs && currentTimeMs < region.endMs,
-			) || null
-		);
-	};
-
+	// Index of the clip being played, so reaching its end knows what comes next.
+	let activeSegmentIndex = -1;
 	// Helper function to find the active speed region at the current time
 	const findActiveSpeedRegion = (currentTimeMs: number): SpeedRegion | null => {
 		return (
@@ -73,16 +67,36 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		);
 	};
 
-	const skipPastTrimRegion = (trimRegion: TrimRegion) => {
-		const skipToTime = trimRegion.endMs / 1000;
-		const clampedSkipToTime = Math.min(skipToTime, video.duration);
-
-		video.currentTime = clampedSkipToTime;
-		emitTime(clampedSkipToTime);
-
-		if (clampedSkipToTime >= video.duration) {
+	/**
+	 * Follow the clip playlist at `timeSeconds`. Returns true when playback
+	 * moved (jumped to another clip or stopped at the end).
+	 */
+	const followPlaylist = (timeSeconds: number): boolean => {
+		const step = resolvePlaybackStep(
+			playbackSegmentsRef.current,
+			timeSeconds * 1000,
+			activeSegmentIndex,
+		);
+		if (step.action === "free") {
+			return false;
+		}
+		if (step.action === "stay") {
+			activeSegmentIndex = step.index;
+			return false;
+		}
+		if (step.action === "end") {
+			video.pause();
+			emitTime(timeSeconds);
+			return true;
+		}
+		activeSegmentIndex = step.index;
+		const target = Math.min(step.toSourceMs / 1000, video.duration);
+		video.currentTime = target;
+		emitTime(target);
+		if (target >= video.duration) {
 			video.pause();
 		}
+		return true;
 	};
 
 	const cancelScheduledUpdate = () => {
@@ -133,12 +147,11 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 
 		const presentedTime = getPresentedTime(metadata);
 		const currentTimeMs = presentedTime * 1000;
-		const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
 
-		// If we're in a trim region during playback, skip to the end of it
-		if (activeTrimRegion && !video.paused && !video.ended) {
-			skipPastTrimRegion(activeTrimRegion);
-		} else {
+		// Past the end of the current clip (or on removed footage): continue with
+		// the next clip on the timeline.
+		const moved = !video.paused && !video.ended && followPlaylist(presentedTime);
+		if (!moved) {
 			// Apply playback speed from active speed region
 			const activeSpeedRegion = findActiveSpeedRegion(currentTimeMs);
 			enablePitchPreservingPlayback(video);
@@ -171,13 +184,8 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 	const handleSeeked = () => {
 		isSeekingRef.current = false;
 
-		const currentTimeMs = video.currentTime * 1000;
-		const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
-
 		// Never leave the preview parked on removed footage after a seek.
-		if (activeTrimRegion) {
-			skipPastTrimRegion(activeTrimRegion);
-		} else {
+		if (!followPlaylist(video.currentTime)) {
 			emitTime(video.currentTime);
 		}
 	};

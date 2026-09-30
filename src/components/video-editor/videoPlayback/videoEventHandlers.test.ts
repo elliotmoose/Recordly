@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getPlaybackSegments, type PlaybackSegment } from "../types";
 import { createVideoEventHandlers } from "./videoEventHandlers";
 
 type PresentedFrameCallback = (now: DOMHighResTimeStamp, metadata: { mediaTime?: number }) => void;
@@ -64,7 +65,7 @@ describe("createVideoEventHandlers", () => {
 			timeUpdateAnimationRef,
 			onPlayStateChange,
 			onTimeUpdate,
-			trimRegionsRef: createMutableRef([]),
+			playbackSegmentsRef: createMutableRef<PlaybackSegment[]>([]),
 			speedRegionsRef: createMutableRef([]),
 		});
 
@@ -97,7 +98,7 @@ describe("createVideoEventHandlers", () => {
 			timeUpdateAnimationRef: createMutableRef<number | null>(null),
 			onPlayStateChange: vi.fn(),
 			onTimeUpdate,
-			trimRegionsRef: createMutableRef([]),
+			playbackSegmentsRef: createMutableRef<PlaybackSegment[]>([]),
 			speedRegionsRef: createMutableRef([]),
 		});
 
@@ -127,7 +128,13 @@ describe("createVideoEventHandlers", () => {
 			timeUpdateAnimationRef: createMutableRef<number | null>(null),
 			onPlayStateChange: vi.fn(),
 			onTimeUpdate,
-			trimRegionsRef: createMutableRef([{ id: "trim-1", startMs: 1000, endMs: 2000 }]),
+			// Footage 1-2s is cut: clips cover 0-1s and 2-10s.
+			playbackSegmentsRef: createMutableRef(
+				getPlaybackSegments([
+					{ id: "a", startMs: 0, endMs: 1000, speed: 1 },
+					{ id: "b", startMs: 2000, endMs: 10_000, speed: 1 },
+				]),
+			),
 			speedRegionsRef: createMutableRef([]),
 		});
 
@@ -154,7 +161,7 @@ describe("createVideoEventHandlers", () => {
 			timeUpdateAnimationRef: createMutableRef<number | null>(null),
 			onPlayStateChange: vi.fn(),
 			onTimeUpdate: vi.fn(),
-			trimRegionsRef: createMutableRef([]),
+			playbackSegmentsRef: createMutableRef<PlaybackSegment[]>([]),
 			speedRegionsRef: createMutableRef([]),
 		});
 
@@ -185,7 +192,13 @@ describe("createVideoEventHandlers", () => {
 			timeUpdateAnimationRef: createMutableRef<number | null>(null),
 			onPlayStateChange: vi.fn(),
 			onTimeUpdate,
-			trimRegionsRef: createMutableRef([{ id: "trim-1", startMs: 1000, endMs: 2000 }]),
+			// Footage 1-2s is cut: clips cover 0-1s and 2-10s.
+			playbackSegmentsRef: createMutableRef(
+				getPlaybackSegments([
+					{ id: "a", startMs: 0, endMs: 1000, speed: 1 },
+					{ id: "b", startMs: 2000, endMs: 10_000, speed: 1 },
+				]),
+			),
 			speedRegionsRef: createMutableRef([]),
 		});
 
@@ -195,5 +208,42 @@ describe("createVideoEventHandlers", () => {
 		expect(video.currentTime).toBe(2);
 		expect(onTimeUpdate).toHaveBeenLastCalledWith(2);
 		expect(shouldSnapPausedFrameRef.current).toBe(true);
+	});
+
+	it("jumps back in the source when the next clip on the timeline comes from earlier", () => {
+		let animationFrameCallback: FrameRequestCallback | null = null;
+		requestAnimationFrameMock.mockImplementation((callback: FrameRequestCallback) => {
+			animationFrameCallback = callback;
+			return 31;
+		});
+		// Timeline: source 6-8s, then source 1-3s. Playback is at the end of the first clip.
+		const video = createMockVideo({ currentTime: 7.99, duration: 10 });
+		const onTimeUpdate = vi.fn();
+		const handlers = createVideoEventHandlers({
+			video,
+			isSeekingRef: createMutableRef(false),
+			isPlayingRef: createMutableRef(false),
+			allowPlaybackRef: createMutableRef(true),
+			currentTimeRef: createMutableRef(0),
+			timeUpdateAnimationRef: createMutableRef<number | null>(null),
+			onPlayStateChange: vi.fn(),
+			onTimeUpdate,
+			playbackSegmentsRef: createMutableRef(
+				getPlaybackSegments([
+					{ id: "b", startMs: 0, endMs: 2000, speed: 1, sourceStartMs: 6000 },
+					{ id: "a", startMs: 2000, endMs: 4000, speed: 1, sourceStartMs: 1000 },
+				]),
+			),
+			speedRegionsRef: createMutableRef([]),
+		});
+
+		video.currentTime = 7;
+		handlers.handlePlay();
+		animationFrameCallback?.(0);
+		video.currentTime = 7.99;
+		animationFrameCallback?.(0);
+
+		expect(video.currentTime).toBe(1);
+		expect(onTimeUpdate).toHaveBeenLastCalledWith(1);
 	});
 });

@@ -4,6 +4,8 @@ import type { useAppearanceState } from "../state/useAppearanceState";
 import type { useTimelineState } from "../state/useTimelineState";
 import {
 	type CursorTelemetryPoint,
+	getPlaybackSegments,
+	isSourceOrderMonotonic,
 	mapTimelineRegionsToSource,
 	type SpeedRegion,
 	type ZoomRegion,
@@ -25,6 +27,54 @@ type BuildExportRenderOptionsInput = {
 	onProgress: (progress: ExportProgress) => void;
 };
 
+/**
+ * Source ranges in timeline order, but only when clips are reordered. In-order
+ * edits keep using the trims so their exports are unchanged.
+ */
+export function getReorderedSourceOrder(clips: TimelineState["clipRegions"]) {
+	const segments = getPlaybackSegments(clips);
+	return isSourceOrderMonotonic(segments)
+		? undefined
+		: segments.map((segment) => ({
+				startMs: segment.sourceStartMs,
+				endMs: segment.sourceEndMs,
+			}));
+}
+
+/**
+ * Audio regions (music, voiceover) for the exporters, which place them on the
+ * source clock. In source order, mapping each edge timeline→source puts them
+ * at the right output time (identically for projects whose clips never
+ * moved). Reordered clips instead hand the audio renderer the clip order and
+ * keep the regions in timeline time.
+ */
+export function buildExportAudioTimeline(
+	clips: TimelineState["clipRegions"],
+	audioRegions: TimelineState["audioRegions"],
+) {
+	const segments = getPlaybackSegments(clips);
+	if (segments.length === 0) {
+		return { audioRegions };
+	}
+	if (isSourceOrderMonotonic(segments)) {
+		return { audioRegions: mapTimelineRegionsToSource(audioRegions, clips) };
+	}
+	return {
+		audioRegions,
+		audioTimelineOrder: {
+			sourceOrder: segments.map((segment) => ({
+				startMs: segment.sourceStartMs,
+				endMs: segment.sourceEndMs,
+			})),
+			timelineSegments: segments.map((segment) => ({
+				timelineStartMs: segment.timelineStartMs,
+				timelineEndMs: segment.timelineEndMs,
+				sourceStartMs: segment.sourceStartMs,
+			})),
+		},
+	};
+}
+
 export function buildExportRenderOptions({
 	appearance,
 	timeline,
@@ -40,6 +90,7 @@ export function buildExportRenderOptions({
 	return {
 		wallpaper: appearance.wallpaper,
 		trimRegions: timeline.trimRegions,
+		sourceOrder: getReorderedSourceOrder(timeline.clipRegions),
 		speedRegions: effectiveSpeedRegions,
 		showShadow: shadowIntensity > 0,
 		shadowIntensity,

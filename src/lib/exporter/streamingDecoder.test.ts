@@ -6,6 +6,7 @@ import {
 	getVideoDecodeFailureCode,
 	preserveFirstVideoDecodeFailure,
 	StreamingVideoDecoder,
+	splitIntoSourceOrderRuns,
 } from "./streamingDecoder";
 
 describe("buildVideoDecodeFailure", () => {
@@ -331,5 +332,30 @@ describe("getDecodedFrameTimelineOffsetUs", () => {
 				mediaStartTime: 0.1,
 			}),
 		).toBe(150_000);
+	});
+});
+
+describe("splitIntoSourceOrderRuns", () => {
+	it("keeps an in-order edit as one run", () => {
+		const segments = [
+			{ startSec: 0, endSec: 1 },
+			{ startSec: 2, endSec: 3 },
+			{ startSec: 3, endSec: 4 },
+		];
+		expect(splitIntoSourceOrderRuns(segments)).toEqual([segments]);
+	});
+
+	it("starts a new run whenever the source goes backwards", () => {
+		const runs = splitIntoSourceOrderRuns([
+			{ startSec: 6, endSec: 8 },
+			{ startSec: 1, endSec: 3 },
+			{ startSec: 4, endSec: 5 },
+			{ startSec: 0, endSec: 0.5 },
+		]);
+		expect(runs.map((run) => run.map((segment) => segment.startSec))).toEqual([
+			[6],
+			[1, 4],
+			[0],
+		]);
 	});
 });

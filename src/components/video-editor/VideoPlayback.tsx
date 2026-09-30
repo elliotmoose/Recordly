@@ -79,8 +79,8 @@ import {
 	DEFAULT_ZOOM_OUT_EASING,
 	getDefaultCaptionFontFamily,
 	type Padding,
+	type PlaybackSegment,
 	type SpeedRegion,
-	type TrimRegion,
 	type WebcamOverlaySettings,
 	type ZoomDepth,
 	type ZoomFocus,
@@ -264,7 +264,8 @@ interface VideoPlaybackProps {
 	cropRegion?: import("./types").CropRegion;
 	webcam?: WebcamOverlaySettings;
 	webcamVideoPath?: string | null;
-	trimRegions?: TrimRegion[];
+	/** Clips in timeline order; playback follows them, skipping removed footage. */
+	playbackSegments?: PlaybackSegment[];
 	speedRegions?: SpeedRegion[];
 	aspectRatio: AspectRatio;
 	annotationRegions?: AnnotationRegion[];
@@ -348,7 +349,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cropRegion,
 			webcam,
 			webcamVideoPath,
-			trimRegions = [],
+			playbackSegments = [],
 			speedRegions = [],
 			aspectRatio,
 			annotationRegions = [],
@@ -482,7 +483,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			height: number;
 		} | null>(null);
 		const layoutVideoContentRef = useRef<(() => void) | null>(null);
-		const trimRegionsRef = useRef<TrimRegion[]>([]);
+		const playbackSegmentsRef = useRef<PlaybackSegment[]>([]);
 		const speedRegionsRef = useRef<SpeedRegion[]>([]);
 		const lastWebcamSyncTimeRef = useRef<number | null>(null);
 		const lastBackgroundSyncTimeRef = useRef<number | null>(null);
@@ -1401,8 +1402,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		}, [currentTime, isPlaying]);
 
 		useEffect(() => {
-			trimRegionsRef.current = trimRegions;
-		}, [trimRegions]);
+			playbackSegmentsRef.current = playbackSegments;
+		}, [playbackSegments]);
 
 		useEffect(() => {
 			speedRegionsRef.current = speedRegions;
@@ -2022,7 +2023,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					timeUpdateAnimationRef,
 					onPlayStateChange,
 					onTimeUpdate,
-					trimRegionsRef,
+					playbackSegmentsRef,
 					speedRegionsRef,
 				});
 

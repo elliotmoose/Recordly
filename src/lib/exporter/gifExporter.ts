@@ -39,6 +39,8 @@ interface GifExporterConfig {
 	wallpaper: string;
 	zoomRegions: ZoomRegion[];
 	trimRegions?: TrimRegion[];
+	/** Source ranges in output order, set only when clips are reordered. */
+	sourceOrder?: Array<{ startMs: number; endMs: number }>;
 	speedRegions?: SpeedRegion[];
 	showShadow: boolean;
 	shadowIntensity: number;
@@ -254,6 +256,7 @@ export class GifExporter {
 			const effectiveDuration = this.streamingDecoder.getEffectiveDuration(
 				this.config.trimRegions,
 				this.config.speedRegions,
+				{ sourceOrder: this.config.sourceOrder },
 			);
 			const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
 
@@ -295,6 +298,7 @@ export class GifExporter {
 					frameIndex++;
 					this.reportProgress(frameIndex, totalFrames);
 				},
+				{ sourceOrder: this.config.sourceOrder },
 			);
 
 			if (this.cancelled) {

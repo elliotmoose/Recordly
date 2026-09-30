@@ -17,7 +17,11 @@ import type {
 	ZoomTransitionEasing,
 } from "@/components/video-editor/types";
 import { getEffectiveVideoStreamDurationSeconds } from "@/lib/mediaTiming";
-import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
+import {
+	AudioProcessor,
+	type AudioTimelineOrder,
+	isAacAudioEncodingSupported,
+} from "./audioEncoder";
 import { buildEditedTrackSourceSegments, classifyEditedTrackStrategy } from "./editedTrackStrategy";
 import {
 	advanceFinalizationProgress,
@@ -48,6 +52,10 @@ interface VideoExporterConfig extends ExportConfig {
 	wallpaper: string;
 	zoomRegions: ZoomRegion[];
 	trimRegions?: TrimRegion[];
+	/** Source ranges in output order, set only when clips are reordered. */
+	sourceOrder?: Array<{ startMs: number; endMs: number }>;
+	/** Clip order for the audio renderer, set only when clips are reordered. */
+	audioTimelineOrder?: AudioTimelineOrder;
 	speedRegions?: SpeedRegion[];
 	showShadow: boolean;
 	shadowIntensity: number;
@@ -281,6 +289,7 @@ export class VideoExporter {
 			const effectiveDuration = this.streamingDecoder.getEffectiveDuration(
 				this.config.trimRegions,
 				this.config.speedRegions,
+				{ sourceOrder: this.config.sourceOrder },
 			);
 			this.effectiveDurationSec = effectiveDuration;
 			const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
@@ -326,6 +335,7 @@ export class VideoExporter {
 					this.processedFrameCount = frameIndex;
 					this.reportProgress(frameIndex, totalFrames);
 				},
+				{ sourceOrder: this.config.sourceOrder },
 			);
 
 			if (this.cancelled) {
@@ -395,6 +405,7 @@ export class VideoExporter {
 				const demuxer = this.streamingDecoder.getDemuxer();
 				if (demuxer || hasAudioRegions || hasSourceAudioFallback) {
 					this.audioProcessor = new AudioProcessor();
+					this.audioProcessor.setTimelineOrder(this.config.audioTimelineOrder);
 					this.audioProcessor.setOnProgress((progress) => {
 						this.reportFinalizingProgress(totalFrames, 99, progress);
 					});
@@ -846,6 +857,7 @@ export class VideoExporter {
 			audioPlan.strategy === "offline-render-fallback"
 		) {
 			this.audioProcessor = new AudioProcessor();
+			this.audioProcessor.setTimelineOrder(this.config.audioTimelineOrder);
 			this.audioProcessor.setOnProgress((progress) => {
 				this.reportFinalizingProgress(totalFrames, 99, progress);
 			});
@@ -944,6 +956,7 @@ export class VideoExporter {
 			audioPlan.strategy === "offline-render-fallback"
 		) {
 			this.audioProcessor = new AudioProcessor();
+			this.audioProcessor.setTimelineOrder(this.config.audioTimelineOrder);
 			this.audioProcessor.setOnProgress((progress) => {
 				this.reportFinalizingProgress(totalFrames, 99, progress);
 			});

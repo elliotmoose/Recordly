@@ -1,11 +1,13 @@
 import { WebDemuxer } from "web-demuxer";
 import { SOURCE_AUDIO_NORMALIZE_GAIN } from "@/components/video-editor/audio/audioTypes";
-import type {
-	AudioRegion,
-	ClipRegion,
-	SourceAudioTrackSettings,
-	SpeedRegion,
-	TrimRegion,
+import {
+	type AudioRegion,
+	type ClipRegion,
+	getClipSourceEndMs,
+	getClipSourceStartMs,
+	type SourceAudioTrackSettings,
+	type SpeedRegion,
+	type TrimRegion,
 } from "@/components/video-editor/types";
 import { buildResolvedAudioPlan, SourceTrackId } from "@/lib/exporter/audioRoutingEngine";
 import { estimateCompanionAudioStartDelaySeconds } from "@/lib/mediaTiming";
@@ -118,6 +120,23 @@ interface TimelineSlice {
 	sourceStartMs: number;
 	sourceEndMs: number;
 	speed: number;
+	/** Where the slice starts in the exported audio. */
+	outputStartMs: number;
+}
+
+/**
+ * Timeline order for edits whose clips play the source out of order. Absent
+ * for in-order edits, which keep the trim-based paths.
+ */
+export interface AudioTimelineOrder {
+	/** Source ranges in output order. */
+	sourceOrder: Array<{ startMs: number; endMs: number }>;
+	/** Clips on the timeline, used to place audio regions (timeline time). */
+	timelineSegments: Array<{
+		timelineStartMs: number;
+		timelineEndMs: number;
+		sourceStartMs: number;
+	}>;
 }
 
 interface PreparedOfflineRender {
@@ -149,9 +168,24 @@ export async function isAacAudioEncodingSupported(
 
 type TrimLikeRegion = TrimRegion | ClipRegion;
 
+function withOutputPositions(slices: TimelineSlice[]): TimelineSlice[] {
+	let outputMs = 0;
+	return slices.map((slice) => {
+		const positioned = { ...slice, outputStartMs: outputMs };
+		outputMs += (slice.sourceEndMs - slice.sourceStartMs) / slice.speed;
+		return positioned;
+	});
+}
+
 export class AudioProcessor {
 	private cancelled = false;
 	private onProgress?: (progress: number) => void;
+	private timelineOrder: AudioTimelineOrder | null = null;
+
+	/** Set when clips are reordered; routes audio through the order-aware renderer. */
+	setTimelineOrder(order: AudioTimelineOrder | null | undefined) {
+		this.timelineOrder = order?.sourceOrder.length ? order : null;
+	}
 
 	private isPassthroughAudioCodec(codec: string | undefined): boolean {
 		if (!codec) {
@@ -279,6 +313,7 @@ export class AudioProcessor {
 
 		// When speed edits, audio regions, or multiple audio sources need mixing, use offline AudioContext pipeline.
 		if (
+			this.timelineOrder ||
 			sortedSpeedRegions.length > 0 ||
 			sortedAudioRegions.length > 0 ||
 			needsSourceAudioMixing ||
@@ -794,7 +829,13 @@ export class AudioProcessor {
 		const sourceDurationMs = sourceDurationSec * 1000;
 
 		// Build timeline slices (non-trimmed segments with speed info)
-		const slices = this.buildTimelineSlices(sourceDurationMs, trimRegions, speedRegions);
+		const slices = this.timelineOrder
+			? this.buildOrderedSlices(
+					sourceDurationMs,
+					this.timelineOrder.sourceOrder,
+					speedRegions,
+				)
+			: this.buildTimelineSlices(sourceDurationMs, trimRegions, speedRegions);
 
 		let outputDurationMs = 0;
 		for (const slice of slices) {
@@ -803,23 +844,33 @@ export class AudioProcessor {
 
 		// Extend for audio regions that might exceed the video timeline
 		for (const { region } of regionEntries) {
-			const regionEndOutput = this.sourceTimeToOutputTime(region.endMs, slices);
+			const regionEndOutput = this.timelineOrder
+				? this.timelineTimeToOutputTime(region.startMs, slices) +
+					(region.endMs - region.startMs)
+				: this.sourceTimeToOutputTime(region.endMs, slices);
 			outputDurationMs = Math.max(outputDurationMs, regionEndOutput);
 		}
 
 		const numChannels = Math.min(primaryBuffer?.numberOfChannels ?? 2, 2);
+		// Muted clips, located in the output through the slices that play them.
 		const mutedSourceOutputRangesSec = (clipRegions ?? [])
-			.filter(
-				(clip) =>
-					Boolean(clip.muted) &&
-					Number.isFinite(clip.startMs) &&
-					Number.isFinite(clip.endMs) &&
-					clip.endMs > clip.startMs,
-			)
-			.map((clip) => ({
-				startSec: Math.max(0, clip.startMs / 1000),
-				endSec: Math.max(0, clip.endMs / 1000),
-			}));
+			.filter((clip) => Boolean(clip.muted) && clip.endMs > clip.startMs)
+			.flatMap((clip) => {
+				const clipSourceStartMs = getClipSourceStartMs(clip);
+				const clipSourceEndMs = getClipSourceEndMs(clip);
+				return slices
+					.filter((slice) => {
+						const midpointMs = (slice.sourceStartMs + slice.sourceEndMs) / 2;
+						return midpointMs >= clipSourceStartMs && midpointMs < clipSourceEndMs;
+					})
+					.map((slice) => ({
+						startSec: slice.outputStartMs / 1000,
+						endSec:
+							(slice.outputStartMs +
+								(slice.sourceEndMs - slice.sourceStartMs) / slice.speed) /
+							1000,
+					}));
+			});
 
 		return {
 			mainBufferEntry,
@@ -1009,8 +1060,12 @@ export class AudioProcessor {
 		chunkOutputStartSec: number,
 		chunkDurationSec: number,
 	): void {
-		const outputStartMs = this.sourceTimeToOutputTime(region.startMs, slices);
-		const outputEndMs = this.sourceTimeToOutputTime(region.endMs, slices);
+		const outputStartMs = this.timelineOrder
+			? this.timelineTimeToOutputTime(region.startMs, slices)
+			: this.sourceTimeToOutputTime(region.startMs, slices);
+		const outputEndMs = this.timelineOrder
+			? outputStartMs + (region.endMs - region.startMs)
+			: this.sourceTimeToOutputTime(region.endMs, slices);
 
 		let localStartSec = outputStartMs / 1000 - chunkOutputStartSec;
 		let localEndSec = outputEndMs / 1000 - chunkOutputStartSec;
@@ -1397,14 +1452,92 @@ export class AudioProcessor {
 				sourceStartMs: start,
 				sourceEndMs: end,
 				speed: speedRegion?.speed ?? 1,
+				outputStartMs: 0,
 			});
 		}
 
-		return slices;
+		return withOutputPositions(slices);
+	}
+
+	/** Slices for reordered clips: the given source ranges in order, split by speed. */
+	private buildOrderedSlices(
+		sourceDurationMs: number,
+		sourceOrder: Array<{ startMs: number; endMs: number }>,
+		speedRegions: SpeedRegion[],
+	): TimelineSlice[] {
+		const slices: TimelineSlice[] = [];
+		for (const range of sourceOrder) {
+			const startMs = Math.max(0, range.startMs);
+			const endMs = Math.min(sourceDurationMs, range.endMs);
+			if (endMs - startMs < 0.001) continue;
+			const boundaries = new Set<number>([startMs, endMs]);
+			for (const region of speedRegions) {
+				if (region.startMs > startMs && region.startMs < endMs)
+					boundaries.add(region.startMs);
+				if (region.endMs > startMs && region.endMs < endMs) boundaries.add(region.endMs);
+			}
+			const sorted = [...boundaries].sort((a, b) => a - b);
+			for (let index = 0; index < sorted.length - 1; index += 1) {
+				const sliceStart = sorted[index];
+				const sliceEnd = sorted[index + 1];
+				if (sliceEnd - sliceStart < 0.001) continue;
+				const midpoint = (sliceStart + sliceEnd) / 2;
+				const speedRegion = speedRegions.find(
+					(region) => midpoint >= region.startMs && midpoint < region.endMs,
+				);
+				slices.push({
+					sourceStartMs: sliceStart,
+					sourceEndMs: sliceEnd,
+					speed: speedRegion?.speed ?? 1,
+					outputStartMs: 0,
+				});
+			}
+		}
+		return withOutputPositions(slices);
+	}
+
+	/** Output time of a timeline time, through the clip that holds it. */
+	private timelineTimeToOutputTime(timelineMs: number, slices: TimelineSlice[]): number {
+		const segments = this.timelineOrder?.timelineSegments ?? [];
+		const segment =
+			segments.find(
+				(candidate) =>
+					timelineMs >= candidate.timelineStartMs && timelineMs < candidate.timelineEndMs,
+			) ?? segments.find((candidate) => candidate.timelineStartMs >= timelineMs);
+		if (!segment) {
+			const last = slices[slices.length - 1];
+			return last
+				? last.outputStartMs + (last.sourceEndMs - last.sourceStartMs) / last.speed
+				: 0;
+		}
+		// Offset into the clip in timeline time; clip speed is already reflected
+		// in the clip's timeline length, so this is also the output offset.
+		const clipOffsetMs = Math.max(0, timelineMs - segment.timelineStartMs);
+		const clipOutputStartMs = this.sourceTimeToOutputTime(segment.sourceStartMs, slices);
+		return clipOutputStartMs + clipOffsetMs;
 	}
 
 	// Map a source-timeline timestamp to the corresponding output-timeline timestamp.
 	private sourceTimeToOutputTime(sourceMs: number, slices: TimelineSlice[]): number {
+		if (this.timelineOrder) {
+			const containing = slices.find(
+				(slice) => sourceMs >= slice.sourceStartMs && sourceMs < slice.sourceEndMs,
+			);
+			if (containing) {
+				return (
+					containing.outputStartMs +
+					(sourceMs - containing.sourceStartMs) / containing.speed
+				);
+			}
+			const ending = slices.find((slice) => Math.abs(sourceMs - slice.sourceEndMs) < 0.5);
+			if (ending) {
+				return (
+					ending.outputStartMs +
+					(ending.sourceEndMs - ending.sourceStartMs) / ending.speed
+				);
+			}
+		}
+
 		let outputMs = 0;
 
 		for (const slice of slices) {

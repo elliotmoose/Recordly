@@ -47,7 +47,11 @@ import {
 	DEFAULT_WALLPAPER_RELATIVE_PATH,
 	isVideoWallpaperSource,
 } from "@/lib/wallpapers";
-import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
+import {
+	AudioProcessor,
+	type AudioTimelineOrder,
+	isAacAudioEncodingSupported,
+} from "./audioEncoder";
 import {
 	normalizeLightningRuntimePlatform,
 	shouldPreferNativeAutoBackend,
@@ -97,6 +101,10 @@ interface VideoExporterConfig extends ExportConfig {
 	wallpaper: string;
 	zoomRegions: ZoomRegion[];
 	trimRegions?: TrimRegion[];
+	/** Source ranges in output order, set only when clips are reordered. */
+	sourceOrder?: Array<{ startMs: number; endMs: number }>;
+	/** Clip order for the audio renderer, set only when clips are reordered. */
+	audioTimelineOrder?: AudioTimelineOrder;
 	speedRegions?: SpeedRegion[];
 	showShadow: boolean;
 	shadowIntensity: number;
@@ -549,6 +557,7 @@ export class ModernVideoExporter {
 				const effectiveDuration = this.streamingDecoder.getEffectiveDuration(
 					this.config.trimRegions,
 					this.config.speedRegions,
+					{ sourceOrder: this.config.sourceOrder },
 				);
 				this.effectiveDurationSec = effectiveDuration;
 				const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
@@ -731,6 +740,7 @@ export class ModernVideoExporter {
 						this.processedFrameCount = frameIndex;
 						this.reportProgress(frameIndex, totalFrames, "extracting");
 					},
+					{ sourceOrder: this.config.sourceOrder },
 				);
 				this.decodeLoopTimeMs = this.getNowMs() - decodeLoopStartedAt;
 
@@ -818,6 +828,7 @@ export class ModernVideoExporter {
 						(this.config.sourceAudioFallbackPaths ?? []).length > 0
 					) {
 						this.audioProcessor = new AudioProcessor();
+						this.audioProcessor.setTimelineOrder(this.config.audioTimelineOrder);
 						this.audioProcessor.setOnProgress((progress) => {
 							this.reportFinalizingProgress(totalFrames, 99, progress);
 						});
@@ -1463,6 +1474,15 @@ export class ModernVideoExporter {
 			return { audioMode: "none" };
 		}
 
+		// Reordered clips: only the order-aware offline renderer can follow them.
+		if (this.config.audioTimelineOrder) {
+			return {
+				audioMode: "edited-track",
+				strategy: "offline-render-fallback",
+				sourceAudioFallbackPaths,
+			};
+		}
+
 		if (
 			speedRegions.length > 0 ||
 			audioRegions.length > 0 ||
@@ -1680,6 +1700,11 @@ export class ModernVideoExporter {
 
 		if (this.config.width % 2 !== 0 || this.config.height % 2 !== 0) {
 			reasons.push("odd-output-dimensions");
+		}
+
+		// The native path can only trim the source; it can't play clips out of order.
+		if (this.config.sourceOrder) {
+			reasons.push("reordered-clips");
 		}
 
 		if (!this.canUseNativeStaticLayoutAudioPlan(audioPlan)) {
@@ -2111,6 +2136,7 @@ export class ModernVideoExporter {
 		sourceAudioFallbackPaths = this.config.sourceAudioFallbackPaths,
 	) {
 		this.audioProcessor = new AudioProcessor();
+		this.audioProcessor.setTimelineOrder(this.config.audioTimelineOrder);
 		this.audioProcessor.setOnProgress(onProgress);
 		const audioBlob = await this.measureFinalizationStage("editedAudioRenderMs", async () =>
 			this.awaitWithFinalizationTimeout(
