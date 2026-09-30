@@ -144,7 +144,9 @@
 	},
 	"toolbar": {
 		"addLayer": "레이어 추가",
-		"splitClip": "클립 분할 (C)"
+		"splitClip": "클립 분할 (C)",
+		"rippleOn": "리플 편집 켜짐: 클립을 제거하거나 옮기면 빈틈이 메워집니다",
+		"rippleOff": "리플 편집 꺼짐: 클립이 놓은 자리에 그대로 있습니다"
 	},
 	"timeline": {
 		"expand": "타임라인 펼치기",

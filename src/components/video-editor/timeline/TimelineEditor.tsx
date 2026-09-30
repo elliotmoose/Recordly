@@ -52,6 +52,8 @@ export interface TimelineEditorProps {
 	clipRegions?: ClipRegion[];
 	onClipSplit?: (splitMs: number) => void;
 	onClipSpanChange?: (id: string, span: Span) => void;
+	/** Ripple editing: clips close up and reorder when dragged over each other. */
+	rippleEditing?: boolean;
 	onClipDelete?: (id: string) => void;
 	selectedClipId?: string | null;
 	onSelectClip?: (id: string | null) => void;
@@ -135,6 +137,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			clipRegions = [],
 			onClipSplit,
 			onClipSpanChange,
+			rippleEditing,
 			onClipDelete,
 			selectedClipId,
 			onSelectClip,
@@ -374,6 +377,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			clipRegions,
 			onClipSplit,
 			onClipSpanChange,
+			rippleEditing,
 			onClipDelete,
 			selectedClipId,
 			onSelectClip,

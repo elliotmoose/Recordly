@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { loadAppSetting, saveAppSetting } from "@/lib/appSettings";
 import type { SourceAudioTrackSettings } from "../audio/audioTypes";
 import type {
 	AnnotationRegion,
@@ -12,6 +13,8 @@ import type {
 	ZoomRegion,
 } from "../types";
 import { DEFAULT_AUTO_CAPTION_SETTINGS } from "../types";
+
+const RIPPLE_EDITING_SETTING_KEY = "rippleEditing";
 
 export function useTimelineState() {
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
@@ -35,6 +38,14 @@ export function useTimelineState() {
 	const [sourceAudioFallbackRefreshKey, setSourceAudioFallbackRefreshKey] = useState(0);
 	const [hasClipSourceAudio, setHasClipSourceAudio] = useState(false);
 	const [autoCaptions, setAutoCaptions] = useState<CaptionCue[]>([]);
+	// Ripple editing is an editing habit, not part of a project: remember it globally.
+	const [rippleEditing, setRippleEditingState] = useState<boolean>(
+		() => loadAppSetting<boolean>(RIPPLE_EDITING_SETTING_KEY) ?? true,
+	);
+	const setRippleEditing = useCallback((enabled: boolean) => {
+		setRippleEditingState(enabled);
+		saveAppSetting(RIPPLE_EDITING_SETTING_KEY, enabled);
+	}, []);
 	const [autoCaptionSettings, setAutoCaptionSettings] = useState<AutoCaptionSettings>(
 		DEFAULT_AUTO_CAPTION_SETTINGS,
 	);
@@ -76,6 +87,8 @@ export function useTimelineState() {
 		setHasClipSourceAudio,
 		autoCaptions,
 		setAutoCaptions,
+		rippleEditing,
+		setRippleEditing,
 		autoCaptionSettings,
 		setAutoCaptionSettings,
 	};

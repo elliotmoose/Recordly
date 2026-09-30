@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "新增圖層",
-		"splitClip": "拆分片段 (C)"
+		"splitClip": "拆分片段 (C)",
+		"rippleOn": "漣漪編輯已開啟：刪除或移動片段會自動補齊空隙",
+		"rippleOff": "漣漪編輯已關閉：片段維持在你放置的位置"
 	},
 	"timeline": {
 		"expand": "展開時間軸",

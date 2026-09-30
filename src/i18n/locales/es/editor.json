@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Agregar capa",
-		"splitClip": "Dividir clip (C)"
+		"splitClip": "Dividir clip (C)",
+		"rippleOn": "Edición en cadena activada: quitar o mover clips cierra los huecos",
+		"rippleOff": "Edición en cadena desactivada: los clips se quedan donde los pongas"
 	},
 	"timeline": {
 		"expand": "Expandir línea de tiempo",

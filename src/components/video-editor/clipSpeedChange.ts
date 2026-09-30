@@ -31,8 +31,10 @@ export function planClipSpeedChange(params: {
 	zoomRegions: ZoomRegion[];
 	selectedClipId: string;
 	speed: number;
+	/** With ripple editing, later clips move out of the way instead of blocking. */
+	allowClipOverlap?: boolean;
 }): ClipSpeedChangePlan | BlockedClipSpeedChange | null {
-	const { clipRegions, zoomRegions, selectedClipId, speed } = params;
+	const { clipRegions, zoomRegions, selectedClipId, speed, allowClipOverlap } = params;
 	if (!selectedClipId || !Number.isFinite(speed) || speed <= 0) {
 		return null;
 	}
@@ -49,7 +51,7 @@ export function planClipSpeedChange(params: {
 		.filter((candidate) => candidate.id !== selectedClipId && candidate.startMs >= clip.endMs)
 		.sort((left, right) => left.startMs - right.startMs)[0];
 
-	if (nextClip && newEndMs > nextClip.startMs) {
+	if (!allowClipOverlap && nextClip && newEndMs > nextClip.startMs) {
 		return { blockedReason: "clip-overlap" };
 	}
 

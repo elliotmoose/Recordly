@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Add Layer",
-		"splitClip": "Split Clip (C)"
+		"splitClip": "Split Clip (C)",
+		"rippleOn": "Ripple editing on: removing or moving clips closes the gaps",
+		"rippleOff": "Ripple editing off: clips stay where you put them"
 	},
 	"timeline": {
 		"expand": "Expand Timeline",

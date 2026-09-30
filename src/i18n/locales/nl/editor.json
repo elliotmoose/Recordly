@@ -144,7 +144,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Laag toevoegen",
-		"splitClip": "Clip splitsen (C)"
+		"splitClip": "Clip splitsen (C)",
+		"rippleOn": "Ripple-bewerking aan: clips verwijderen of verplaatsen sluit de gaten",
+		"rippleOff": "Ripple-bewerking uit: clips blijven waar je ze neerzet"
 	},
 	"timeline": {
 		"expand": "Tijdlijn uitvouwen",

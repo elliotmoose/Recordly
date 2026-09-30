@@ -162,6 +162,8 @@ export default function Item({
 			{...listeners}
 			{...attributes}
 			data-timeline-item="true"
+			data-timeline-item-id={id}
+			data-timeline-variant={variant}
 			onPointerDownCapture={handleSelect}
 			className="group h-full"
 		>

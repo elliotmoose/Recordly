@@ -255,10 +255,18 @@ export function getClipSourceEndMs(clip: ClipRegion): number {
 	return Math.round(getClipSourceStartMs(clip) + displayDurationMs * getSafeClipSpeed(clip));
 }
 
-export function getTimelineDurationMs(clips: ClipRegion[], sourceDurationMs: number): number {
+export function getTimelineDurationMs(
+	clips: ClipRegion[],
+	sourceDurationMs: number,
+	options: { ripple?: boolean } = {},
+): number {
 	const baseDurationMs = Math.max(0, Math.round(sourceDurationMs));
 	if (clips.length === 0) {
 		return baseDurationMs;
+	}
+	// With ripple the clips are packed, so the timeline ends where they do.
+	if (options.ripple) {
+		return clips.reduce((durationMs, clip) => Math.max(durationMs, Math.round(clip.endMs)), 0);
 	}
 
 	return clips.reduce(

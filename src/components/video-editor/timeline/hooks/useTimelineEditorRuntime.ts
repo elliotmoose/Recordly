@@ -44,6 +44,7 @@ interface UseTimelineEditorRuntimeParams {
 	clipRegions: ClipRegion[];
 	onClipSplit?: (splitMs: number) => void;
 	onClipSpanChange?: (id: string, span: Span) => void;
+	rippleEditing?: boolean;
 	onClipDelete?: (id: string) => void;
 	selectedClipId?: string | null;
 	onSelectClip?: (id: string | null) => void;
@@ -94,6 +95,7 @@ export function useTimelineEditorRuntime({
 	clipRegions,
 	onClipSplit,
 	onClipSpanChange,
+	rippleEditing = false,
 	onClipDelete,
 	selectedClipId,
 	onSelectClip,
@@ -202,6 +204,7 @@ export function useTimelineEditorRuntime({
 		onSpeedSpanChange,
 		onAudioSpanChange,
 		onCaptionSpanChange,
+		allowClipOverlap: rippleEditing,
 	});
 
 	const {

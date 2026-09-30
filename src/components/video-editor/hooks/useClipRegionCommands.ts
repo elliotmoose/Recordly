@@ -2,13 +2,13 @@ import type { Span } from "dnd-timeline";
 import { type Dispatch, type MutableRefObject, type SetStateAction, useCallback } from "react";
 import { toast } from "sonner";
 import { planClipSpeedChange } from "../clipSpeedChange";
+import { moveClip, packClips, remapTimelineRegions, trimClipEdges } from "../timelineRipple";
 import {
 	type AnnotationRegion,
 	type AudioRegion,
 	type ClipRegion,
 	type EditorEffectSection,
 	getClipSourceStartMs,
-	type SpeedRegion,
 	type ZoomRegion,
 } from "../types";
 
@@ -24,7 +24,6 @@ interface UseClipRegionCommandsParams {
 	zoomRegions: ZoomRegion[];
 	setZoomRegions: Dispatch<SetStateAction<ZoomRegion[]>>;
 	setAnnotationRegions: Dispatch<SetStateAction<AnnotationRegion[]>>;
-	setSpeedRegions: Dispatch<SetStateAction<SpeedRegion[]>>;
 	setAudioRegions: Dispatch<SetStateAction<AudioRegion[]>>;
 	selectedClipId: string | null;
 	setSelectedClipId: Dispatch<SetStateAction<string | null>>;
@@ -34,6 +33,10 @@ interface UseClipRegionCommandsParams {
 	setSelectedCaptionId: Dispatch<SetStateAction<string | null>>;
 	setActiveEffectSection: Dispatch<SetStateAction<EditorEffectSection>>;
 	nextClipIdRef: MutableRefObject<number>;
+	/** Close gaps and keep later clips attached when clips change. */
+	rippleEditing: boolean;
+	/** Length of the recording, the limit for revealing footage. */
+	sourceDurationMs: number;
 	t: Translator;
 }
 
@@ -43,7 +46,6 @@ export function useClipRegionCommands({
 	zoomRegions,
 	setZoomRegions,
 	setAnnotationRegions,
-	setSpeedRegions,
 	setAudioRegions,
 	selectedClipId,
 	setSelectedClipId,
@@ -53,6 +55,8 @@ export function useClipRegionCommands({
 	setSelectedCaptionId,
 	setActiveEffectSection,
 	nextClipIdRef,
+	rippleEditing,
+	sourceDurationMs,
 	t,
 }: UseClipRegionCommandsParams) {
 	const handleSelectClip = useCallback(
@@ -104,78 +108,105 @@ export function useClipRegionCommands({
 		[clipRegions, nextClipIdRef, selectedClipId, setClipRegions, setSelectedClipId],
 	);
 
+	/**
+	 * Commit a new clip layout computed without ripple (every clip where its
+	 * content sits). With ripple editing the clips are packed and zooms,
+	 * annotations and audio move with the clip they sit on.
+	 */
+	const commitClipLayout = useCallback(
+		(unpacked: ClipRegion[], regionAnchors: ClipRegion[] = unpacked) => {
+			const next = rippleEditing ? packClips(unpacked) : unpacked;
+			setClipRegions(next);
+			if (next !== regionAnchors) {
+				setZoomRegions((current) => remapTimelineRegions(current, regionAnchors, next));
+				setAnnotationRegions((current) =>
+					remapTimelineRegions(current, regionAnchors, next),
+				);
+				setAudioRegions((current) => remapTimelineRegions(current, regionAnchors, next));
+			}
+		},
+		[rippleEditing, setAnnotationRegions, setAudioRegions, setClipRegions, setZoomRegions],
+	);
+
+	const removeRegionsInSpans = useCallback(
+		(spans: Array<{ startMs: number; endMs: number }>) => {
+			if (spans.length === 0) return;
+			const outside = <T extends { startMs: number; endMs: number }>(regions: T[]) =>
+				regions.filter(
+					(region) =>
+						!spans.some(
+							(span) => region.startMs < span.endMs && region.endMs > span.startMs,
+						),
+				);
+			setZoomRegions((current) => outside(current));
+			setAnnotationRegions((current) => outside(current));
+			setAudioRegions((current) => outside(current));
+		},
+		[setAnnotationRegions, setAudioRegions, setZoomRegions],
+	);
+
 	const handleClipSpanChange = useCallback(
 		(id: string, span: Span) => {
 			const oldClip = clipRegions.find((clip) => clip.id === id);
+			if (!oldClip) return;
 			const newStart = Math.round(span.start);
 			const newEnd = Math.round(span.end);
-			const removedSegments = oldClip
-				? [
-						...(newStart > oldClip.startMs
-							? [{ startMs: oldClip.startMs, endMs: newStart }]
-							: []),
-						...(newEnd < oldClip.endMs
-							? [{ startMs: newEnd, endMs: oldClip.endMs }]
-							: []),
-					]
-				: [];
+			const startDelta = newStart - oldClip.startMs;
+			const endDelta = newEnd - oldClip.endMs;
 
-			if (oldClip) {
-				const startDelta = newStart - oldClip.startMs;
-				const endDelta = newEnd - oldClip.endMs;
-				if (Math.abs(startDelta - endDelta) < 1 && Math.abs(startDelta) > 0) {
-					setZoomRegions((current) =>
-						current.map((zoom) =>
-							zoom.startMs < oldClip.endMs && zoom.endMs > oldClip.startMs
-								? {
-										...zoom,
-										startMs: zoom.startMs + startDelta,
-										endMs: zoom.endMs + startDelta,
-									}
-								: zoom,
-						),
-					);
-				}
+			// Both edges moved together: a move. Its content goes with it.
+			if (Math.abs(startDelta - endDelta) < 1) {
+				if (startDelta === 0) return;
+				const moved = moveClip(clipRegions, id, newStart, rippleEditing);
+				setClipRegions(moved);
+				setZoomRegions((current) => remapTimelineRegions(current, clipRegions, moved));
+				setAnnotationRegions((current) =>
+					remapTimelineRegions(current, clipRegions, moved),
+				);
+				setAudioRegions((current) => remapTimelineRegions(current, clipRegions, moved));
+				return;
 			}
 
-			if (removedSegments.length > 0) {
-				const removeTrimmedRegions = <T extends { startMs: number; endMs: number }>(
-					regions: T[],
-				) =>
-					regions.filter(
-						(region) =>
-							!removedSegments.some(
-								(segment) =>
-									region.startMs < segment.endMs &&
-									region.endMs > segment.startMs,
-							),
-					);
-				setZoomRegions((current) => removeTrimmedRegions(current));
-				setAnnotationRegions((current) => removeTrimmedRegions(current));
-				setSpeedRegions((current) => removeTrimmedRegions(current));
-				setAudioRegions((current) => removeTrimmedRegions(current));
-			}
-
-			setClipRegions((current) =>
-				current.map((clip) =>
-					clip.id === id ? { ...clip, startMs: newStart, endMs: newEnd } : clip,
-				),
+			// An edge moved: trim or reveal footage at that end.
+			const trimmed = trimClipEdges(
+				oldClip,
+				{ startMs: newStart, endMs: newEnd },
+				clipRegions.filter((clip) => clip.id !== id),
+				sourceDurationMs,
 			);
+			removeRegionsInSpans([
+				...(trimmed.startMs > oldClip.startMs
+					? [{ startMs: oldClip.startMs, endMs: trimmed.startMs }]
+					: []),
+				...(trimmed.endMs < oldClip.endMs
+					? [{ startMs: trimmed.endMs, endMs: oldClip.endMs }]
+					: []),
+			]);
+			commitClipLayout(clipRegions.map((clip) => (clip.id === id ? trimmed : clip)));
 		},
 		[
 			clipRegions,
+			commitClipLayout,
+			removeRegionsInSpans,
+			rippleEditing,
 			setAnnotationRegions,
 			setAudioRegions,
 			setClipRegions,
-			setSpeedRegions,
 			setZoomRegions,
+			sourceDurationMs,
 		],
 	);
 
 	const handleClipSpeedChange = useCallback(
 		(speed: number) => {
 			if (!selectedClipId || !Number.isFinite(speed) || speed <= 0) return;
-			const plan = planClipSpeedChange({ clipRegions, zoomRegions, selectedClipId, speed });
+			const plan = planClipSpeedChange({
+				clipRegions,
+				zoomRegions,
+				selectedClipId,
+				speed,
+				allowClipOverlap: rippleEditing,
+			});
 			if (!plan) return;
 			if ("blockedReason" in plan) {
 				toast.warning(
@@ -191,10 +222,18 @@ export function useClipRegionCommands({
 				);
 				return;
 			}
-			setClipRegions(plan.clipRegions);
 			setZoomRegions(plan.zoomRegions);
+			commitClipLayout(plan.clipRegions);
 		},
-		[clipRegions, selectedClipId, setClipRegions, setZoomRegions, t, zoomRegions],
+		[
+			clipRegions,
+			commitClipLayout,
+			rippleEditing,
+			selectedClipId,
+			setZoomRegions,
+			t,
+			zoomRegions,
+		],
 	);
 
 	const handleClipMutedChange = useCallback(
@@ -221,27 +260,13 @@ export function useClipRegionCommands({
 	const handleClipDelete = useCallback(
 		(id: string) => {
 			const deletedClip = clipRegions.find((clip) => clip.id === id);
-			setClipRegions((current) => current.filter((clip) => clip.id !== id));
 			if (deletedClip) {
-				const outsideDeletedClip = (region: { startMs: number; endMs: number }) =>
-					region.endMs <= deletedClip.startMs || region.startMs >= deletedClip.endMs;
-				setZoomRegions((current) => current.filter(outsideDeletedClip));
-				setAnnotationRegions((current) => current.filter(outsideDeletedClip));
-				setSpeedRegions((current) => current.filter(outsideDeletedClip));
-				setAudioRegions((current) => current.filter(outsideDeletedClip));
+				removeRegionsInSpans([deletedClip]);
 			}
+			commitClipLayout(clipRegions.filter((clip) => clip.id !== id));
 			if (selectedClipId === id) setSelectedClipId(null);
 		},
-		[
-			clipRegions,
-			selectedClipId,
-			setAnnotationRegions,
-			setAudioRegions,
-			setClipRegions,
-			setSelectedClipId,
-			setSpeedRegions,
-			setZoomRegions,
-		],
+		[clipRegions, commitClipLayout, removeRegionsInSpans, selectedClipId, setSelectedClipId],
 	);
 
 	return {

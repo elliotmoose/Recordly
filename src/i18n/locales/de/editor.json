@@ -142,7 +142,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Ebene hinzufügen",
-		"splitClip": "Clip teilen (C)"
+		"splitClip": "Clip teilen (C)",
+		"rippleOn": "Ripple-Bearbeitung an: Entfernen oder Verschieben von Clips schließt Lücken",
+		"rippleOff": "Ripple-Bearbeitung aus: Clips bleiben, wo du sie ablegst"
 	},
 	"timeline": {
 		"expand": "Zeitleiste erweitern",

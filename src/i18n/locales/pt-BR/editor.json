@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Adicionar camada",
-		"splitClip": "Dividir clipe (C)"
+		"splitClip": "Dividir clipe (C)",
+		"rippleOn": "Edição em cascata ativada: remover ou mover clipes fecha os espaços",
+		"rippleOff": "Edição em cascata desativada: os clipes ficam onde você os coloca"
 	},
 	"timeline": {
 		"expand": "Expandir linha do tempo",

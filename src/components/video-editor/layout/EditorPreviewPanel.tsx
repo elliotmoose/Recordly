@@ -3,6 +3,7 @@ import {
 	Check,
 	Crop,
 	MagicWand,
+	Magnet,
 	MagnifyingGlassPlus,
 	Pause,
 	Play,
@@ -295,6 +296,33 @@ export function EditorPreviewPanel(props: Props) {
 						title={t("editor.toolbar.splitClip")}
 					>
 						<Scissors className="h-4 w-4" />
+					</Button>
+					<Button
+						onClick={() => timeline.setRippleEditing(!timeline.rippleEditing)}
+						variant="ghost"
+						size="icon"
+						aria-pressed={timeline.rippleEditing}
+						className={
+							timeline.rippleEditing
+								? "h-7 w-7 rounded-full bg-[#2563EB]/10 text-[#2563EB] transition-all hover:bg-[#2563EB]/15"
+								: "h-7 w-7 rounded-full text-muted-foreground transition-all hover:bg-foreground/10 hover:text-foreground"
+						}
+						title={
+							timeline.rippleEditing
+								? t(
+										"editor.toolbar.rippleOn",
+										"Ripple editing on: removing or moving clips closes the gaps",
+									)
+								: t(
+										"editor.toolbar.rippleOff",
+										"Ripple editing off: clips stay where you put them",
+									)
+						}
+					>
+						<Magnet
+							className="h-4 w-4"
+							weight={timeline.rippleEditing ? "fill" : "regular"}
+						/>
 					</Button>
 				</div>
 

@@ -1,4 +1,9 @@
-import { type ClipRegion, getClipSourceStartMs, sortClipRegions } from "./types";
+import {
+	type ClipRegion,
+	getClipSourceEndMs,
+	getClipSourceStartMs,
+	sortClipRegions,
+} from "./types";
 
 /**
  * Close every gap: clips keep their order and durations and are laid end to
@@ -117,4 +122,61 @@ export function remapTimelineRegions<T extends { startMs: number; endMs: number 
 		return { ...region, startMs: region.startMs + deltaMs, endMs: region.endMs + deltaMs };
 	});
 	return changed ? next : regions;
+}
+
+/** Shortest a trim may make a clip. */
+const MIN_TRIMMED_CLIP_MS = 100;
+
+/**
+ * Apply an edge drag to a clip. Dragging an edge inwards trims footage from
+ * that end; dragging outwards reveals more, but never past the ends of the
+ * recording or into footage another clip already shows (a moment of the
+ * recording appears on the timeline at most once). Returns the clip with its
+ * new timeline span and source start, positioned where its content sits;
+ * ripple packing (if on) happens afterwards.
+ */
+export function trimClipEdges(
+	clip: ClipRegion,
+	requested: { startMs: number; endMs: number },
+	otherClips: ClipRegion[],
+	sourceDurationMs: number,
+): ClipRegion {
+	const speed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
+	const sourceStartMs = getClipSourceStartMs(clip);
+	const sourceEndMs = sourceStartMs + (clip.endMs - clip.startMs) * speed;
+
+	const usedBefore = otherClips
+		.map((other) => getClipSourceEndMs(other))
+		.filter((end) => end <= sourceStartMs + 0.5);
+	const usedAfter = otherClips
+		.map((other) => getClipSourceStartMs(other))
+		.filter((start) => start >= sourceEndMs - 0.5);
+	const minSourceStartMs = Math.max(0, ...usedBefore);
+	const maxSourceEndMs = Math.min(
+		Number.isFinite(sourceDurationMs) && sourceDurationMs > 0
+			? sourceDurationMs
+			: Number.POSITIVE_INFINITY,
+		...usedAfter,
+	);
+
+	let nextSourceStartMs = sourceStartMs + (requested.startMs - clip.startMs) * speed;
+	let nextSourceEndMs = sourceEndMs + (requested.endMs - clip.endMs) * speed;
+	nextSourceStartMs = Math.max(minSourceStartMs, nextSourceStartMs);
+	nextSourceEndMs = Math.min(maxSourceEndMs, nextSourceEndMs);
+	const minSourceSpanMs = MIN_TRIMMED_CLIP_MS * speed;
+	if (nextSourceEndMs - nextSourceStartMs < minSourceSpanMs) {
+		if (requested.startMs !== clip.startMs) {
+			nextSourceStartMs = nextSourceEndMs - minSourceSpanMs;
+		} else {
+			nextSourceEndMs = nextSourceStartMs + minSourceSpanMs;
+		}
+	}
+
+	const startMs = clip.startMs + (nextSourceStartMs - sourceStartMs) / speed;
+	return {
+		...clip,
+		startMs: Math.round(startMs),
+		endMs: Math.round(startMs + (nextSourceEndMs - nextSourceStartMs) / speed),
+		sourceStartMs: Math.round(nextSourceStartMs),
+	};
 }

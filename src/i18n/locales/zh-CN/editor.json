@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "添加图层",
-		"splitClip": "拆分片段 (C)"
+		"splitClip": "拆分片段 (C)",
+		"rippleOn": "波纹编辑已开启：删除或移动片段会自动补齐空隙",
+		"rippleOff": "波纹编辑已关闭：片段保持在你放置的位置"
 	},
 	"timeline": {
 		"expand": "展开时间轴",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveClip, packClips, remapTimelineRegions } from "./timelineRipple";
+import { moveClip, packClips, remapTimelineRegions, trimClipEdges } from "./timelineRipple";
 import {
 	type ClipRegion,
 	clipsToTrims,
@@ -144,5 +144,55 @@ describe("moveClip leading edge", () => {
 		expect(
 			layout(moveClip(clips, "b", 1600, true)).map((entry) => entry.split(":")[0]),
 		).toEqual(["a", "c", "b"]);
+	});
+});
+
+describe("trimClipEdges", () => {
+	// b shows source 4000-6000; a shows 0-2000; c shows 8000-9000.
+	const a = clip("a", 0, 2000, 0);
+	const b = clip("b", 2000, 4000, 4000);
+	const c = clip("c", 4000, 5000, 8000);
+
+	it("trims the head by moving the source start", () => {
+		expect(layout([trimClipEdges(b, { startMs: 2500, endMs: 4000 }, [a, c], 10_000)])).toEqual([
+			"b:2500-4000@4500",
+		]);
+	});
+
+	it("extends into unused footage but stops at footage another clip shows", () => {
+		// Extending b's head by 3s would reach source 1000, inside a (0-2000): stop at 2000.
+		expect(layout([trimClipEdges(b, { startMs: -1000, endMs: 4000 }, [a, c], 10_000)])).toEqual(
+			["b:0-4000@2000"],
+		);
+		// Extending the tail by 5s stops at c's footage (8000).
+		expect(layout([trimClipEdges(b, { startMs: 2000, endMs: 9000 }, [a, c], 10_000)])).toEqual([
+			"b:2000-6000@4000",
+		]);
+	});
+
+	it("stops at the ends of the recording", () => {
+		expect(layout([trimClipEdges(c, { startMs: 4000, endMs: 9000 }, [a, b], 10_000)])).toEqual([
+			"c:4000-6000@8000",
+		]);
+	});
+
+	it("keeps a minimum length", () => {
+		expect(layout([trimClipEdges(b, { startMs: 3990, endMs: 4000 }, [a, c], 10_000)])).toEqual([
+			"b:3900-4000@5900",
+		]);
+	});
+
+	it("maps edge moves through clip speed", () => {
+		const fast: ClipRegion = {
+			id: "f",
+			startMs: 0,
+			endMs: 1000,
+			speed: 2,
+			sourceStartMs: 1000,
+		};
+		// Trimming 500ms of timeline off the head removes 1000ms of source at 2x.
+		expect(layout([trimClipEdges(fast, { startMs: 500, endMs: 1000 }, [], 10_000)])).toEqual([
+			"f:500-1000@2000",
+		]);
 	});
 });

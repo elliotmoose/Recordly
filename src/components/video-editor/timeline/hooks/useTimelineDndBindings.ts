@@ -30,6 +30,8 @@ interface UseTimelineDndBindingsParams {
 	onZoomSpanChange: (id: string, span: Span) => void;
 	onTrimSpanChange?: (id: string, span: Span) => void;
 	onClipSpanChange?: (id: string, span: Span) => void;
+	/** Ripple editing: dropping a clip over others reorders instead of being refused. */
+	allowClipOverlap?: boolean;
 	onAnnotationSpanChange?: (id: string, span: Span, trackIndex?: number) => void;
 	onSpeedSpanChange?: (id: string, span: Span) => void;
 	onAudioSpanChange?: (id: string, span: Span, trackIndex?: number) => void;
@@ -57,6 +59,7 @@ export function useTimelineDndBindings({
 	onZoomSpanChange,
 	onTrimSpanChange,
 	onClipSpanChange,
+	allowClipOverlap = false,
 	onAnnotationSpanChange,
 	onSpeedSpanChange,
 	onAudioSpanChange,
@@ -113,7 +116,7 @@ export function useTimelineDndBindings({
 
 			if (itemKind === "zoom") return checkOverlap(zoomRegions);
 			if (itemKind === "trim") return checkOverlap(trimRegions);
-			if (itemKind === "clip") return checkOverlap(clipRegions);
+			if (itemKind === "clip") return !allowClipOverlap && checkOverlap(clipRegions);
 			if (itemKind === "speed") return checkOverlap(speedRegions);
 			// Captions share a single lane and must never overlap, so validate a dragged or
 			// resized caption against the other cues just like the other timeline items.
@@ -129,6 +132,7 @@ export function useTimelineDndBindings({
 			return false;
 		},
 		[
+			allowClipOverlap,
 			resolveItemKind,
 			resolveTrackIndex,
 			zoomRegions,

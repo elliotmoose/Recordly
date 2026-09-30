@@ -113,8 +113,11 @@ export function useTimelineProjection({
 		[currentTime, toTimelineTime],
 	);
 	const timelineDuration = useMemo(
-		() => getTimelineDurationMs(clipRegions, duration * 1000) / 1000,
-		[clipRegions, duration],
+		() =>
+			getTimelineDurationMs(clipRegions, duration * 1000, {
+				ripple: timeline.rippleEditing,
+			}) / 1000,
+		[clipRegions, duration, timeline.rippleEditing],
 	);
 	const effectiveSpeedRegions = useMemo<SpeedRegion[]>(() => {
 		const clipDerived = clipRegions

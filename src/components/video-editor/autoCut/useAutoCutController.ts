@@ -22,6 +22,7 @@ import {
 	parseRetakeResponse,
 	RETAKE_SYSTEM_PROMPT,
 } from "./llmRetakes";
+import { packClips, remapTimelineRegions } from "../timelineRipple";
 import { detectRetakeGroups } from "./retakeDetection";
 import { detectSilenceCuts, intersectRanges } from "./silenceCuts";
 import { segmentUtterances, transcriptWordsFromCaptions } from "./transcript";
@@ -264,13 +265,20 @@ export function useAutoCutController({
 		if (removalRanges.length === 0) {
 			return;
 		}
-		setClipRegions((current) =>
-			removeSourceRangesFromClips(
-				current,
-				removalRanges,
-				() => `clip-${nextClipIdRef.current++}`,
-			),
+		// Pieces stay where their content sat; with ripple the gaps then close and
+		// zooms, annotations and audio move with the piece they sit on.
+		const pieces = removeSourceRangesFromClips(
+			clipRegions,
+			removalRanges,
+			() => `clip-${nextClipIdRef.current++}`,
 		);
+		const next = timeline.rippleEditing ? packClips(pieces) : pieces;
+		setClipRegions(next);
+		if (next !== pieces) {
+			timeline.setZoomRegions((current) => remapTimelineRegions(current, pieces, next));
+			timeline.setAnnotationRegions((current) => remapTimelineRegions(current, pieces, next));
+			timeline.setAudioRegions((current) => remapTimelineRegions(current, pieces, next));
+		}
 		const appliedGroupIds = new Set(
 			retakeGroups
 				.filter((group) => decisions[group.id] !== undefined)
@@ -292,7 +300,20 @@ export function useAutoCutController({
 				seconds: (savedMs / 1000).toFixed(1),
 			}),
 		);
-	}, [decisions, nextClipIdRef, removalRanges, retakeGroups, savedMs, setClipRegions, t]);
+	}, [
+		decisions,
+		nextClipIdRef,
+		removalRanges,
+		retakeGroups,
+		savedMs,
+		setClipRegions,
+		t,
+		clipRegions,
+		timeline.rippleEditing,
+		timeline.setAnnotationRegions,
+		timeline.setAudioRegions,
+		timeline.setZoomRegions,
+	]);
 
 	const previewTake = useCallback(
 		(key: string, range: SourceRange) => {

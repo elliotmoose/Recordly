@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Aggiungi livello",
-		"splitClip": "Dividi clip (C)"
+		"splitClip": "Dividi clip (C)",
+		"rippleOn": "Modifica a catena attiva: rimuovere o spostare clip chiude gli spazi",
+		"rippleOff": "Modifica a catena disattivata: le clip restano dove le metti"
 	},
 	"timeline": {
 		"expand": "Espandi timeline",

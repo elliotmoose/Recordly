@@ -81,6 +81,7 @@ export function EditorTimelinePanel(props: Props) {
 				clipRegions={timeline.clipRegions}
 				onClipSplit={clipCommands.handleClipSplit}
 				onClipSpanChange={clipCommands.handleClipSpanChange}
+				rippleEditing={timeline.rippleEditing}
 				selectedClipId={timeline.selectedClipId}
 				onSelectClip={clipCommands.handleSelectClip}
 				audioRegions={timeline.audioRegions}

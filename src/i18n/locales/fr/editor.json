@@ -143,7 +143,9 @@
 	},
 	"toolbar": {
 		"addLayer": "Ajouter une couche",
-		"splitClip": "Diviser le clip (C)"
+		"splitClip": "Diviser le clip (C)",
+		"rippleOn": "Montage en cascade activé : retirer ou déplacer des clips referme les trous",
+		"rippleOff": "Montage en cascade désactivé : les clips restent où vous les placez"
 	},
 	"timeline": {
 		"expand": "Développer la timeline",
