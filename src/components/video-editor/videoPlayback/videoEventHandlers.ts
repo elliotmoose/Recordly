@@ -3,6 +3,11 @@ import { enablePitchPreservingPlayback } from "@/lib/mediaTiming";
 import type { PlaybackSegment, SpeedRegion } from "../types";
 import { resolvePlaybackStep } from "./playbackSegments";
 
+/** How close to a clip's end (ms of source) the exact boundary check is armed. */
+const BOUNDARY_CHECK_WINDOW_MS = 1000;
+/** A presented time this close to a jump's target means the jump landed. */
+const JUMP_ARRIVAL_TOLERANCE_MS = 500;
+
 interface PresentedFrameMetadata {
 	mediaTime?: number;
 }
@@ -58,6 +63,9 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 
 	// Index of the clip being played, so reaching its end knows what comes next.
 	let activeSegmentIndex = -1;
+	// Source time (ms) of a jump still in flight. Frame callbacks queued before
+	// the seek report the old position; acting on them would jump again.
+	let pendingJumpTargetMs: number | null = null;
 	// Helper function to find the active speed region at the current time
 	const findActiveSpeedRegion = (currentTimeMs: number): SpeedRegion | null => {
 		return (
@@ -72,6 +80,15 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 	 * moved (jumped to another clip or stopped at the end).
 	 */
 	const followPlaylist = (timeSeconds: number): boolean => {
+		if (pendingJumpTargetMs !== null) {
+			const arrived =
+				Math.abs(timeSeconds * 1000 - pendingJumpTargetMs) < JUMP_ARRIVAL_TOLERANCE_MS;
+			if (!arrived) {
+				// Stale: don't act on it or show it.
+				return true;
+			}
+			pendingJumpTargetMs = null;
+		}
 		const step = resolvePlaybackStep(
 			playbackSegmentsRef.current,
 			timeSeconds * 1000,
@@ -82,6 +99,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		}
 		if (step.action === "stay") {
 			activeSegmentIndex = step.index;
+			scheduleBoundaryCheck(timeSeconds * 1000);
 			return false;
 		}
 		if (step.action === "end") {
@@ -91,6 +109,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		}
 		activeSegmentIndex = step.index;
 		const target = Math.min(step.toSourceMs / 1000, video.duration);
+		pendingJumpTargetMs = target * 1000;
 		video.currentTime = target;
 		emitTime(target);
 		if (target >= video.duration) {
@@ -99,7 +118,46 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		return true;
 	};
 
+	// Frame callbacks can be sparse (a busy machine drops frames), so near the
+	// end of a clip that jumps elsewhere, also check at the exact boundary.
+	let boundaryTimer: ReturnType<typeof setTimeout> | null = null;
+	const clearBoundaryCheck = () => {
+		if (boundaryTimer !== null) {
+			clearTimeout(boundaryTimer);
+			boundaryTimer = null;
+		}
+	};
+	function scheduleBoundaryCheck(timeMs: number) {
+		clearBoundaryCheck();
+		const segments = playbackSegmentsRef.current;
+		const current = segments[activeSegmentIndex];
+		if (!current || video.paused || video.ended) {
+			return;
+		}
+		const next = segments[activeSegmentIndex + 1];
+		if (next && Math.abs(next.sourceStartMs - current.sourceEndMs) <= 1) {
+			return;
+		}
+		// The media clock runs ahead of the last presented frame on a busy
+		// machine; measure from whichever is further along.
+		const remainingMs = current.sourceEndMs - Math.max(timeMs, video.currentTime * 1000);
+		if (remainingMs > BOUNDARY_CHECK_WINDOW_MS) {
+			return;
+		}
+		const rate = video.playbackRate > 0 ? video.playbackRate : 1;
+		boundaryTimer = setTimeout(
+			() => {
+				boundaryTimer = null;
+				if (!video.paused && !video.ended && !isSeekingRef.current) {
+					followPlaylist(video.currentTime);
+				}
+			},
+			Math.max(0, remainingMs / rate),
+		);
+	}
+
 	const cancelScheduledUpdate = () => {
+		clearBoundaryCheck();
 		if (timeUpdateAnimationRef.current !== null) {
 			cancelAnimationFrame(timeUpdateAnimationRef.current);
 			timeUpdateAnimationRef.current = null;
@@ -183,6 +241,14 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 
 	const handleSeeked = () => {
 		isSeekingRef.current = false;
+		// A seek that landed away from the pending jump is the user scrubbing; one
+		// that landed on it stays guarded until a frame from there is presented.
+		if (
+			pendingJumpTargetMs !== null &&
+			Math.abs(video.currentTime * 1000 - pendingJumpTargetMs) >= JUMP_ARRIVAL_TOLERANCE_MS
+		) {
+			pendingJumpTargetMs = null;
+		}
 
 		// Never leave the preview parked on removed footage after a seek.
 		if (!followPlaylist(video.currentTime)) {

@@ -65,5 +65,8 @@ export function resolvePlaybackStep(
 		return next >= 0 ? jumpTo(next) : { action: "end" };
 	}
 
-	return jumpTo(lastIndex + 1);
+	// Reordered: only the start (no clip played yet) moves on to the first
+	// clip. Anything else outside the clips mid-playback is a stale report
+	// from before a jump, not a reason to skip ahead.
+	return lastIndex < 0 ? jumpTo(0) : { action: "stay", index: lastIndex };
 }

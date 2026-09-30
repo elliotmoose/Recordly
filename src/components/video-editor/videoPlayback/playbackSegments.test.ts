@@ -64,3 +64,15 @@ describe("resolvePlaybackStep at split points", () => {
 		expect(resolvePlaybackStep(split, 1005, 1)).toEqual({ action: "stay", index: 1 });
 	});
 });
+
+describe("resolvePlaybackStep stale reports", () => {
+	it("does not skip ahead on a stale time from before a jump", () => {
+		const three = getPlaybackSegments([
+			{ id: "b", startMs: 0, endMs: 2000, speed: 1, sourceStartMs: 6000 },
+			{ id: "a", startMs: 2000, endMs: 4000, speed: 1, sourceStartMs: 1000 },
+			{ id: "c", startMs: 4000, endMs: 5000, speed: 1, sourceStartMs: 4000 },
+		]);
+		// Now in clip "a" (index 1); a late report says 3.5s (after a's end, before c).
+		expect(resolvePlaybackStep(three, 3500, 2)).toEqual({ action: "stay", index: 2 });
+	});
+});
